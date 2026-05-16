@@ -2,6 +2,7 @@ import type {
   BlockedRootsState,
   ExtensionState,
   HardLockWindow,
+  ProtectedSettingsChangeLock,
   ProtectedSettings,
   VerificationStatus,
 } from "./types";
@@ -11,6 +12,19 @@ export type BlockedRootAddResult =
   | { kind: "invalid" }
   | { kind: "duplicate" }
   | { kind: "updated"; state: ExtensionState };
+
+export type ProtectedSettingsSaveResult =
+  | { kind: "unchanged" }
+  | { kind: "locked"; nextChangeAvailableOnBrowserLocalDay: string }
+  | { kind: "updated"; state: ExtensionState };
+
+export type ProtectedSettingsChangeAvailability = {
+  isLocked: boolean;
+  nextChangeAvailableOnBrowserLocalDay: string | null;
+};
+
+export const PROTECTED_SETTINGS_LOCKED_MESSAGE_PREFIX =
+  "Protected settings already changed today. Next change available on ";
 
 export const DEFAULT_BLOCKED_ROOTS = ["twitter.com", "x.com"] as const;
 
@@ -35,6 +49,7 @@ export function createEmptyExtensionState(): ExtensionState {
       active: [],
       pendingRemoval: [],
     },
+    protectedSettingsChangeLock: createProtectedSettingsChangeLock(),
     verification: createIdleVerificationStatus(),
   };
 }
@@ -47,6 +62,7 @@ export function createConfiguredState(setupInput: ProtectedSettings): ExtensionS
       active: [...DEFAULT_BLOCKED_ROOTS],
       pendingRemoval: [],
     },
+    protectedSettingsChangeLock: createProtectedSettingsChangeLock(),
     verification: createIdleVerificationStatus(),
   };
 }
@@ -84,7 +100,43 @@ export function normalizeExtensionState(value: unknown): ExtensionState {
     currentConfig: parseProtectedSettings(value.currentConfig),
     pendingConfig: parseProtectedSettings(value.pendingConfig),
     blockedRoots: parseBlockedRoots(value.blockedRoots),
+    protectedSettingsChangeLock: parseProtectedSettingsChangeLock(
+      value.protectedSettingsChangeLock,
+    ),
     verification: parseVerificationStatus(value.verification),
+  };
+}
+
+export function getBrowserLocalDay(date: Date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+export function getProtectedSettingsChangeAvailability(
+  state: ExtensionState,
+  now: Date = new Date(),
+): ProtectedSettingsChangeAvailability {
+  const lastChangedOnBrowserLocalDay =
+    state.protectedSettingsChangeLock.lastChangedOnBrowserLocalDay;
+
+  const currentBrowserLocalDay = getBrowserLocalDay(now);
+
+  if (
+    lastChangedOnBrowserLocalDay === null ||
+    lastChangedOnBrowserLocalDay !== currentBrowserLocalDay
+  ) {
+    return {
+      isLocked: false,
+      nextChangeAvailableOnBrowserLocalDay: null,
+    };
+  }
+
+  return {
+    isLocked: true,
+    nextChangeAvailableOnBrowserLocalDay: getNextBrowserLocalDay(currentBrowserLocalDay),
   };
 }
 
@@ -196,23 +248,54 @@ export function cancelBlockedRootRemoval(
 export function savePendingProtectedSettings(
   state: ExtensionState,
   settingsInput: ProtectedSettings,
-): ExtensionState | null {
+  now: Date = new Date(),
+): ProtectedSettingsSaveResult {
   if (state.currentConfig === null) {
-    return createConfiguredState(settingsInput);
+    return {
+      kind: "updated",
+      state: createConfiguredState(settingsInput),
+    };
   }
 
   const nextPendingConfig = createProtectedSettings(settingsInput);
   const matchesCurrentConfig = isSameProtectedSettings(state.currentConfig, nextPendingConfig);
   const matchesPendingConfig =
     state.pendingConfig !== null && isSameProtectedSettings(state.pendingConfig, nextPendingConfig);
+  const cancelsPendingConfig = state.pendingConfig !== null && matchesCurrentConfig;
 
-  if (matchesCurrentConfig || matchesPendingConfig) {
-    return null;
+  if (matchesPendingConfig) {
+    return {
+      kind: "unchanged",
+    };
+  }
+
+  if (state.pendingConfig === null && matchesCurrentConfig) {
+    return {
+      kind: "unchanged",
+    };
+  }
+
+  const changeAvailability = getProtectedSettingsChangeAvailability(state, now);
+
+  if (
+    changeAvailability.isLocked &&
+    changeAvailability.nextChangeAvailableOnBrowserLocalDay !== null
+  ) {
+    return {
+      kind: "locked",
+      nextChangeAvailableOnBrowserLocalDay: changeAvailability.nextChangeAvailableOnBrowserLocalDay,
+    };
   }
 
   return {
-    ...state,
-    pendingConfig: nextPendingConfig,
+    kind: "updated",
+    state: {
+      ...state,
+      pendingConfig: cancelsPendingConfig ? null : nextPendingConfig,
+      protectedSettingsChangeLock: {
+        lastChangedOnBrowserLocalDay: getBrowserLocalDay(now),
+      },
+    },
   };
 }
 
@@ -227,6 +310,12 @@ function createProtectedSettings(setupInput: ProtectedSettings): ProtectedSettin
       start: setupInput.hardLockWindow.start,
       end: setupInput.hardLockWindow.end,
     },
+  };
+}
+
+function createProtectedSettingsChangeLock(): ProtectedSettingsChangeLock {
+  return {
+    lastChangedOnBrowserLocalDay: null,
   };
 }
 
@@ -279,6 +368,19 @@ function parseBlockedRoots(value: unknown): BlockedRootsState {
   };
 }
 
+function parseProtectedSettingsChangeLock(value: unknown): ProtectedSettingsChangeLock {
+  if (!isRecord(value)) {
+    return createProtectedSettingsChangeLock();
+  }
+
+  return {
+    lastChangedOnBrowserLocalDay:
+      typeof value.lastChangedOnBrowserLocalDay === "string"
+        ? value.lastChangedOnBrowserLocalDay
+        : null,
+  };
+}
+
 function parseVerificationStatus(value: unknown): VerificationStatus {
   if (!isRecord(value)) {
     return createIdleVerificationStatus();
@@ -313,6 +415,13 @@ function isVerificationKind(value: unknown): value is VerificationStatus["kind"]
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function getNextBrowserLocalDay(browserLocalDay: string): string {
+  const [year, month, day] = browserLocalDay.split("-").map(Number);
+  const nextDay = new Date(year, month - 1, day + 1);
+
+  return getBrowserLocalDay(nextDay);
 }
 
 function readString(value: unknown, key: string): string {

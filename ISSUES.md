@@ -72,11 +72,11 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    Add the once-per-browser-local-day change lock for protected settings. The initial setup save is free. After that, only one real change per browser-local day is allowed across the `Tracked Profile` and `Hard Lock Window`, and once a pending protected change exists, it cannot be edited again until the next browser-local day.
 
    ## Acceptance criteria
-   - [ ] First-run setup does not consume the daily protected-settings change allowance.
-   - [ ] A real protected-settings change consumes the day’s one allowed protected change.
-   - [ ] Saving unchanged protected values does not consume the day’s allowance.
-   - [ ] Once a pending protected change exists, further protected edits are blocked until the next browser-local day.
-   - [ ] The popup explains when the next protected change becomes available.
+   - [x] First-run setup does not consume the daily protected-settings change allowance.
+   - [x] A real protected-settings change consumes the day’s one allowed protected change.
+   - [x] Saving unchanged protected values does not consume the day’s allowance.
+   - [x] Once a pending protected change exists, further protected edits are blocked until the next browser-local day.
+   - [x] The popup explains when the next protected change becomes available.
 
    ## Blocked by
    - Issue 3

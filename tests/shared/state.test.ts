@@ -5,6 +5,7 @@ import {
   createConfiguredState,
   createEmptyExtensionState,
   formatHardLockWindow,
+  getProtectedSettingsChangeAvailability,
   isSetupRequired,
   normalizeBlockedRoot,
   normalizeExtensionState,
@@ -32,6 +33,17 @@ function createConfiguredTestState() {
   return createConfiguredState(ACTIVE_PROTECTED_SETTINGS);
 }
 
+function expectUpdatedProtectedSettingsState(
+  result: ReturnType<typeof savePendingProtectedSettings>,
+) {
+  expect(result.kind).toBe("updated");
+  if (result.kind !== "updated") {
+    throw new Error("Expected protected settings save to succeed.");
+  }
+
+  return result.state;
+}
+
 describe("shared extension state", () => {
   it("starts in setup mode without saved config", () => {
     const state = createEmptyExtensionState();
@@ -46,6 +58,7 @@ describe("shared extension state", () => {
     expect(isSetupRequired(state)).toBe(false);
     expect(state.blockedRoots.active).toEqual([...DEFAULT_BLOCKED_ROOTS]);
     expect(state.pendingConfig).toBeNull();
+    expect(state.protectedSettingsChangeLock.lastChangedOnBrowserLocalDay).toBeNull();
     expect(state.verification.kind).toBe("idle");
   });
 
@@ -79,6 +92,7 @@ describe("shared extension state", () => {
     expect(state.currentConfig?.trackedProfile).toBe("lockin-user");
     expect(state.blockedRoots.active).toEqual(["twitter.com"]);
     expect(state.blockedRoots.pendingRemoval).toEqual([]);
+    expect(state.protectedSettingsChangeLock.lastChangedOnBrowserLocalDay).toBeNull();
     expect(state.verification.kind).toBe("allowedToday");
     expect(state.verification.lastAcceptedSolveAt).toBeNull();
   });
@@ -127,30 +141,151 @@ describe("shared extension state", () => {
   });
 
   it("saves later protected-setting edits as pending for tomorrow", () => {
-    const nextState = savePendingProtectedSettings(
-      createConfiguredTestState(),
-      PENDING_PROTECTED_SETTINGS,
+    const result = expectUpdatedProtectedSettingsState(
+      savePendingProtectedSettings(
+        createConfiguredTestState(),
+        PENDING_PROTECTED_SETTINGS,
+        new Date("2026-05-16T12:00:00"),
+      ),
     );
 
-    expect(nextState).not.toBeNull();
-    expect(nextState?.currentConfig).toEqual(ACTIVE_PROTECTED_SETTINGS);
-    expect(nextState?.pendingConfig).toEqual(PENDING_PROTECTED_SETTINGS);
+    expect(result.currentConfig).toEqual(ACTIVE_PROTECTED_SETTINGS);
+    expect(result.pendingConfig).toEqual(PENDING_PROTECTED_SETTINGS);
+    expect(result.protectedSettingsChangeLock.lastChangedOnBrowserLocalDay).toBe("2026-05-16");
   });
 
-  it("keeps an existing pending protected change when the active values are saved again", () => {
-    const pendingState = savePendingProtectedSettings(
-      createConfiguredTestState(),
-      PENDING_PROTECTED_SETTINGS,
+  it("keeps an existing pending protected change when the same pending values are saved again", () => {
+    const pendingState = expectUpdatedProtectedSettingsState(
+      savePendingProtectedSettings(
+        createConfiguredTestState(),
+        PENDING_PROTECTED_SETTINGS,
+        new Date("2026-05-16T12:00:00"),
+      ),
     );
 
-    expect(pendingState).not.toBeNull();
-    if (pendingState === null) {
-      throw new Error("Expected pending protected settings to be created.");
-    }
+    const unchangedResult = savePendingProtectedSettings(
+      pendingState,
+      PENDING_PROTECTED_SETTINGS,
+      new Date("2026-05-16T12:30:00"),
+    );
 
-    const unchangedState = savePendingProtectedSettings(pendingState, ACTIVE_PROTECTED_SETTINGS);
+    expect(unchangedResult).toEqual({
+      kind: "unchanged",
+    });
+  });
 
-    expect(unchangedState).toBeNull();
+  it("blocks canceling a pending protected change until the next browser-local day", () => {
+    const pendingState = expectUpdatedProtectedSettingsState(
+      savePendingProtectedSettings(
+        createConfiguredTestState(),
+        PENDING_PROTECTED_SETTINGS,
+        new Date("2026-05-16T12:00:00"),
+      ),
+    );
+
+    const lockedCancelResult = savePendingProtectedSettings(
+      pendingState,
+      ACTIVE_PROTECTED_SETTINGS,
+      new Date("2026-05-16T18:00:00"),
+    );
+
+    expect(lockedCancelResult).toEqual({
+      kind: "locked",
+      nextChangeAvailableOnBrowserLocalDay: "2026-05-17",
+    });
+  });
+
+  it("allows canceling a pending protected change on the next browser-local day", () => {
+    const pendingState = expectUpdatedProtectedSettingsState(
+      savePendingProtectedSettings(
+        createConfiguredTestState(),
+        PENDING_PROTECTED_SETTINGS,
+        new Date("2026-05-16T12:00:00"),
+      ),
+    );
+
+    const canceledState = expectUpdatedProtectedSettingsState(
+      savePendingProtectedSettings(
+        pendingState,
+        ACTIVE_PROTECTED_SETTINGS,
+        new Date("2026-05-17T08:00:00"),
+      ),
+    );
+
+    expect(canceledState.pendingConfig).toBeNull();
+    expect(canceledState.protectedSettingsChangeLock.lastChangedOnBrowserLocalDay).toBe(
+      "2026-05-17",
+    );
+  });
+
+  it("does not consume the daily protected-settings change allowance during first-run setup", () => {
+    const state = createConfiguredState(PENDING_PROTECTED_SETTINGS);
+
+    expect(state.pendingConfig).toBeNull();
+    expect(state.protectedSettingsChangeLock.lastChangedOnBrowserLocalDay).toBeNull();
+  });
+
+  it("does not consume the daily protected-settings change allowance for unchanged saves", () => {
+    const result = savePendingProtectedSettings(
+      createConfiguredTestState(),
+      ACTIVE_PROTECTED_SETTINGS,
+      new Date("2026-05-16T12:00:00"),
+    );
+
+    expect(result).toEqual({
+      kind: "unchanged",
+    });
+  });
+
+  it("blocks further protected-setting edits until the next browser-local day", () => {
+    const firstSaveState = expectUpdatedProtectedSettingsState(
+      savePendingProtectedSettings(
+        createConfiguredTestState(),
+        PENDING_PROTECTED_SETTINGS,
+        new Date("2026-05-16T12:00:00"),
+      ),
+    );
+
+    const secondSaveResult = savePendingProtectedSettings(
+      firstSaveState,
+      {
+        trackedProfile: "third-user",
+        hardLockWindow: {
+          start: "21:00",
+          end: "07:00",
+        },
+      },
+      new Date("2026-05-16T20:00:00"),
+    );
+
+    expect(secondSaveResult).toEqual({
+      kind: "locked",
+      nextChangeAvailableOnBrowserLocalDay: "2026-05-17",
+    });
+  });
+
+  it("shows the next protected-settings change after the browser-local day rolls over", () => {
+    const pendingState = expectUpdatedProtectedSettingsState(
+      savePendingProtectedSettings(
+        createConfiguredTestState(),
+        PENDING_PROTECTED_SETTINGS,
+        new Date("2026-05-16T12:00:00"),
+      ),
+    );
+
+    expect(
+      getProtectedSettingsChangeAvailability(pendingState, new Date("2026-05-16T18:00:00")),
+    ).toEqual({
+      isLocked: true,
+      nextChangeAvailableOnBrowserLocalDay: "2026-05-17",
+    });
+
+    expect(
+      getProtectedSettingsChangeAvailability(pendingState, new Date("2026-05-17T08:00:00")),
+    ).toEqual({
+      isLocked: false,
+      nextChangeAvailableOnBrowserLocalDay: null,
+    });
   });
 
   it("cancels a pending blocked root removal when the root is re-added", () => {

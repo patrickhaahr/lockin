@@ -27,10 +27,15 @@ export type VerificationStatus = {
   lastAcceptedSolveAt: string | null;
 };
 
+export type ProtectedSettingsChangeLock = {
+  lastChangedOnBrowserLocalDay: string | null;
+};
+
 export type ExtensionState = {
   currentConfig: ProtectedSettings | null;
   pendingConfig: ProtectedSettings | null;
   blockedRoots: BlockedRootsState;
+  protectedSettingsChangeLock: ProtectedSettingsChangeLock;
   verification: VerificationStatus;
 };
 

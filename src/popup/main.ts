@@ -6,10 +6,15 @@ import {
   createConfiguredState,
   formatHardLockWindow,
   isSetupRequired,
+  PROTECTED_SETTINGS_LOCKED_MESSAGE_PREFIX,
   savePendingProtectedSettings,
   scheduleBlockedRootRemoval,
 } from "@/shared/state";
 import { escapeHtml } from "@/shared/html";
+import {
+  renderProtectedSettingsForm,
+  renderProtectedSettingsSummary,
+} from "./protected-settings-form";
 import {
   createStateMutationQueue,
   ensureExtensionState,
@@ -150,15 +155,15 @@ async function saveProtectedSettings(
     return;
   }
 
-  let saveWasUpdated = false;
+  let saveResult: ReturnType<typeof savePendingProtectedSettings>;
 
   try {
-    saveWasUpdated = await runStateMutation((state) => {
-      const nextState = savePendingProtectedSettings(state, settingsInput);
+    saveResult = await runStateMutation((state) => {
+      const mutationResult = savePendingProtectedSettings(state, settingsInput);
 
       return {
-        nextState,
-        result: nextState !== null,
+        nextState: mutationResult.kind === "updated" ? mutationResult.state : null,
+        result: mutationResult,
       };
     });
   } catch {
@@ -166,8 +171,13 @@ async function saveProtectedSettings(
     return;
   }
 
-  if (!saveWasUpdated) {
-    errorMessage.textContent = "Protected settings already match the active values.";
+  if (saveResult.kind === "unchanged") {
+    errorMessage.textContent = "Protected settings already match the saved values.";
+    return;
+  }
+
+  if (saveResult.kind === "locked") {
+    errorMessage.textContent = `${PROTECTED_SETTINGS_LOCKED_MESSAGE_PREFIX}${saveResult.nextChangeAvailableOnBrowserLocalDay}.`;
     return;
   }
 
@@ -363,48 +373,7 @@ function renderSettingsView(state: ExtensionState): string {
         <h2>Active</h2>
         <p class="section-label">Protected Settings</p>
         ${renderProtectedSettingsSummary(state.currentConfig)}
-
-        <form class="form-panel protected-settings-form" data-role="protected-settings-form">
-          <label class="field">
-            <span>Tracked Profile</span>
-            <input
-              name="trackedProfile"
-              type="text"
-              autocomplete="off"
-              value="${escapeHtml(state.currentConfig.trackedProfile)}"
-              placeholder="leetcode-username"
-              required
-            />
-          </label>
-
-          <div class="time-grid">
-            <label class="field">
-              <span>Hard Lock Start</span>
-              <input
-                name="hardLockStart"
-                type="time"
-                value="${escapeHtml(state.currentConfig.hardLockWindow.start)}"
-                required
-              />
-            </label>
-
-            <label class="field">
-              <span>Hard Lock End</span>
-              <input
-                name="hardLockEnd"
-                type="time"
-                value="${escapeHtml(state.currentConfig.hardLockWindow.end)}"
-                required
-              />
-            </label>
-          </div>
-
-          <p class="detail">
-            Saving here stages protected-setting changes for tomorrow. Active and pending protected settings stay separate until the next browser-local day.
-          </p>
-          <p class="error" data-role="protected-settings-error"></p>
-          <button class="primary-button" type="submit">Save for tomorrow</button>
-        </form>
+        ${renderProtectedSettingsForm(state)}
 
         <p class="section-label">Blocked Roots</p>
         <dl class="summary-list section-list">
@@ -456,21 +425,6 @@ function renderPendingProtectedSettings(state: ExtensionState): string {
   }
 
   return renderProtectedSettingsSummary(state.pendingConfig);
-}
-
-function renderProtectedSettingsSummary(settings: ProtectedSettings): string {
-  return `
-    <dl class="summary-list section-list">
-      <div>
-        <dt>Tracked Profile</dt>
-        <dd>${escapeHtml(settings.trackedProfile)}</dd>
-      </div>
-      <div>
-        <dt>Hard Lock Window</dt>
-        <dd>${escapeHtml(formatHardLockWindow(settings.hardLockWindow))}</dd>
-      </div>
-    </dl>
-  `;
 }
 
 function renderActiveBlockedRoots(activeRoots: string[], pendingRemovalRoots: string[]): string {
