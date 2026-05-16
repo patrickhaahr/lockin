@@ -5,6 +5,12 @@ import type {
   ProtectedSettings,
   VerificationStatus,
 } from "./types";
+import { getDomain } from "tldts";
+
+export type BlockedRootAddResult =
+  | { kind: "invalid" }
+  | { kind: "duplicate" }
+  | { kind: "updated"; state: ExtensionState };
 
 export const DEFAULT_BLOCKED_ROOTS = ["twitter.com", "x.com"] as const;
 
@@ -74,6 +80,115 @@ export function normalizeExtensionState(value: unknown): ExtensionState {
   };
 }
 
+export function normalizeBlockedRoot(input: string): string | null {
+  const trimmedInput = input.trim().toLowerCase();
+
+  if (trimmedInput === "") {
+    return null;
+  }
+
+  const candidate = hasScheme(trimmedInput) ? trimmedInput : `https://${trimmedInput}`;
+
+  let hostname = "";
+
+  try {
+    hostname = new URL(candidate).hostname;
+  } catch {
+    return null;
+  }
+
+  const domain = getDomain(hostname, {
+    allowPrivateDomains: true,
+  });
+
+  return domain === null ? null : domain;
+}
+
+export function addBlockedRoot(state: ExtensionState, input: string): BlockedRootAddResult {
+  const normalizedRoot = normalizeBlockedRoot(input);
+
+  if (normalizedRoot === null) {
+    return {
+      kind: "invalid",
+    };
+  }
+
+  if (state.blockedRoots.pendingRemoval.includes(normalizedRoot)) {
+    const nextState = cancelBlockedRootRemoval(state, normalizedRoot);
+
+    if (nextState === null) {
+      return {
+        kind: "duplicate",
+      };
+    }
+
+    return {
+      kind: "updated",
+      state: nextState,
+    };
+  }
+
+  if (state.blockedRoots.active.includes(normalizedRoot)) {
+    return {
+      kind: "duplicate",
+    };
+  }
+
+  return {
+    kind: "updated",
+    state: {
+      ...state,
+      blockedRoots: {
+        active: [...state.blockedRoots.active, normalizedRoot],
+        pendingRemoval: [...state.blockedRoots.pendingRemoval],
+      },
+    },
+  };
+}
+
+export function scheduleBlockedRootRemoval(
+  state: ExtensionState,
+  root: string,
+): ExtensionState | null {
+  if (
+    !state.blockedRoots.active.includes(root) ||
+    state.blockedRoots.pendingRemoval.includes(root)
+  ) {
+    return null;
+  }
+
+  return {
+    ...state,
+    blockedRoots: {
+      active: [...state.blockedRoots.active],
+      pendingRemoval: [...state.blockedRoots.pendingRemoval, root],
+    },
+  };
+}
+
+export function cancelBlockedRootRemoval(
+  state: ExtensionState,
+  root: string,
+): ExtensionState | null {
+  if (!state.blockedRoots.pendingRemoval.includes(root)) {
+    return null;
+  }
+
+  return {
+    ...state,
+    blockedRoots: {
+      active: [...state.blockedRoots.active],
+      pendingRemoval: state.blockedRoots.pendingRemoval.filter(
+        (blockedRoot) => blockedRoot !== root,
+      ),
+    },
+  };
+}
+
+export function isBlockedRootConfigured(blockedRoots: BlockedRootsState, root: string): boolean {
+  return blockedRoots.active.includes(root) || blockedRoots.pendingRemoval.includes(root);
+}
+
 function createProtectedSettings(setupInput: ProtectedSettings): ProtectedSettings {
   return {
     trackedProfile: setupInput.trackedProfile.trim(),
@@ -82,6 +197,10 @@ function createProtectedSettings(setupInput: ProtectedSettings): ProtectedSettin
       end: setupInput.hardLockWindow.end,
     },
   };
+}
+
+function hasScheme(value: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:\/\//iu.test(value);
 }
 
 function parseProtectedSettings(value: unknown): ProtectedSettings | null {

@@ -33,12 +33,12 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    Build blocked-root management in the popup settings subview. Start from default Twitter/X roots on initial setup, accept bare roots or full URLs, normalize to root domains with public-suffix-aware parsing, reject redundant roots across active and pending state, apply additions immediately, and schedule removals for the next browser-local day. Show active and pending blocked roots in separate sections.
 
    ## Acceptance criteria
-   - [ ] First-run setup persists the default Twitter/X blocked roots without asking the user to configure them.
-   - [ ] Settings accept either a bare root or a full URL and normalize to a lowercase root domain.
-   - [ ] Redundant blocked roots are rejected against both active and pending state.
-   - [ ] Adding a blocked root takes effect immediately and appears in the active list.
-   - [ ] Removing a blocked root schedules it for next-day removal and shows it in pending state.
-   - [ ] Re-adding a root that is pending removal cancels that pending removal.
+   - [x] First-run setup persists the default Twitter/X blocked roots without asking the user to configure them.
+   - [x] Settings accept either a bare root or a full URL and normalize to a lowercase root domain.
+   - [x] Redundant blocked roots are rejected against both active and pending state.
+   - [x] Adding a blocked root takes effect immediately and appears in the active list.
+   - [x] Removing a blocked root schedules it for next-day removal and shows it in pending state.
+   - [x] Re-adding a root that is pending removal cancels that pending removal.
 
    ## Blocked by
    - Issue 1

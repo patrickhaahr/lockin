@@ -1,9 +1,12 @@
 import {
   DEFAULT_HARD_LOCK_WINDOW,
+  addBlockedRoot,
+  cancelBlockedRootRemoval,
   createEmptyExtensionState,
   createConfiguredState,
   formatHardLockWindow,
   isSetupRequired,
+  scheduleBlockedRootRemoval,
 } from "@/shared/state";
 import { escapeHtml } from "@/shared/html";
 import { ensureExtensionState, writeExtensionState } from "@/shared/storage";
@@ -20,6 +23,7 @@ const popupRoot: HTMLDivElement = root;
 
 let extensionState: ExtensionState = createEmptyExtensionState();
 let popupView: PopupView = "main";
+let blockedRootsWrite: Promise<void> = Promise.resolve();
 
 void initializePopup();
 
@@ -95,6 +99,83 @@ function bindRegularView(): void {
   popupRoot.querySelector('[data-action="close-settings"]')?.addEventListener("click", () => {
     popupView = "main";
     renderPopup();
+  });
+
+  const blockedRootsForm = popupRoot.querySelector('[data-role="blocked-roots-form"]');
+  const blockedRootsError = popupRoot.querySelector('[data-role="blocked-roots-error"]');
+
+  if (
+    blockedRootsForm instanceof HTMLFormElement &&
+    blockedRootsError instanceof HTMLParagraphElement
+  ) {
+    blockedRootsForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void saveBlockedRoot(blockedRootsForm, blockedRootsError);
+    });
+  }
+
+  bindRootButtons("schedule-root-removal", scheduleRootRemoval);
+  bindRootButtons("cancel-root-removal", cancelRootRemoval);
+}
+
+async function saveBlockedRoot(
+  form: HTMLFormElement,
+  errorMessage: HTMLParagraphElement,
+): Promise<void> {
+  const blockedRootInput = readFormValue(form, "blockedRoot");
+  const result = addBlockedRoot(extensionState, blockedRootInput);
+
+  if (result.kind === "invalid") {
+    errorMessage.textContent = "Enter a valid domain root or URL.";
+    return;
+  }
+
+  if (result.kind === "duplicate") {
+    errorMessage.textContent = "That blocked root is already active or already pending removal.";
+    return;
+  }
+
+  await persistBlockedRootsState(result.state);
+  form.reset();
+}
+
+async function scheduleRootRemoval(root: string): Promise<void> {
+  const nextState = scheduleBlockedRootRemoval(extensionState, root);
+
+  if (nextState === null) {
+    return;
+  }
+
+  await persistBlockedRootsState(nextState);
+}
+
+async function cancelRootRemoval(root: string): Promise<void> {
+  const nextState = cancelBlockedRootRemoval(extensionState, root);
+
+  if (nextState === null) {
+    return;
+  }
+
+  await persistBlockedRootsState(nextState);
+}
+
+async function persistBlockedRootsState(nextState: ExtensionState): Promise<void> {
+  extensionState = nextState;
+  renderPopup();
+  blockedRootsWrite = blockedRootsWrite.then(async () => {
+    await writeExtensionState(nextState);
+  });
+  await blockedRootsWrite;
+}
+
+function bindRootButtons(
+  action: "schedule-root-removal" | "cancel-root-removal",
+  handler: (root: string) => Promise<void>,
+): void {
+  popupRoot.querySelectorAll<HTMLElement>(`[data-action="${action}"]`).forEach((button) => {
+    button.addEventListener("click", () => {
+      void handler(button.dataset.root ?? "");
+    });
   });
 }
 
@@ -213,9 +294,27 @@ function renderSettingsView(state: ExtensionState): string {
           </div>
           <div>
             <dt>Blocked Roots</dt>
-            <dd>${renderRoots(state.blockedRoots.active)}</dd>
+            <dd>${renderActiveBlockedRoots(state.blockedRoots.active, state.blockedRoots.pendingRemoval)}</dd>
           </div>
         </dl>
+
+        <form class="form-panel blocked-roots-form" data-role="blocked-roots-form">
+          <label class="field">
+            <span>Add blocked root</span>
+            <input
+              name="blockedRoot"
+              type="text"
+              autocomplete="off"
+              placeholder="youtube.com or https://www.youtube.com"
+              required
+            />
+          </label>
+          <p class="detail">
+            Adds take effect immediately. Re-adding a root pending removal cancels that pending removal.
+          </p>
+          <p class="error" data-role="blocked-roots-error"></p>
+          <button class="primary-button" type="submit">Add blocked root</button>
+        </form>
       </section>
 
       <section class="panel">
@@ -227,7 +326,7 @@ function renderSettingsView(state: ExtensionState): string {
           </div>
           <div>
             <dt>Blocked Root Removals</dt>
-            <dd>${renderRoots(state.blockedRoots.pendingRemoval)}</dd>
+            <dd>${renderPendingBlockedRoots(state.blockedRoots.pendingRemoval)}</dd>
           </div>
         </dl>
       </section>
@@ -243,12 +342,63 @@ function renderPendingProtectedSettings(state: ExtensionState): string {
   return `${escapeHtml(state.pendingConfig.trackedProfile)} · ${escapeHtml(formatHardLockWindow(state.pendingConfig.hardLockWindow))}`;
 }
 
-function renderRoots(roots: string[]): string {
+function renderActiveBlockedRoots(activeRoots: string[], pendingRemovalRoots: string[]): string {
+  if (activeRoots.length === 0) {
+    return "None";
+  }
+
+  return activeRoots
+    .map((rootName) => {
+      const isPendingRemoval = pendingRemovalRoots.includes(rootName);
+      const removalStatus = isPendingRemoval
+        ? '<span class="list-detail">Pending removal tomorrow</span>'
+        : "";
+      const buttonLabel = isPendingRemoval ? "Removal scheduled" : "Remove tomorrow";
+      const disabledAttribute = isPendingRemoval ? "disabled" : "";
+
+      return `
+        <span class="list-row">
+          <span>
+            <span>${escapeHtml(rootName)}</span>
+            ${removalStatus}
+          </span>
+          <button
+            class="ghost-button list-button"
+            type="button"
+            data-action="schedule-root-removal"
+            data-root="${escapeHtml(rootName)}"
+            ${disabledAttribute}
+          >
+            ${buttonLabel}
+          </button>
+        </span>
+      `;
+    })
+    .join("");
+}
+
+function renderPendingBlockedRoots(roots: string[]): string {
   if (roots.length === 0) {
     return "None";
   }
 
-  return roots.map((rootName) => escapeHtml(rootName)).join(", ");
+  return roots
+    .map(
+      (rootName) => `
+        <span class="list-row">
+          <span>${escapeHtml(rootName)}</span>
+          <button
+            class="ghost-button list-button"
+            type="button"
+            data-action="cancel-root-removal"
+            data-root="${escapeHtml(rootName)}"
+          >
+            Keep active
+          </button>
+        </span>
+      `,
+    )
+    .join("");
 }
 
 function readFormValue(form: HTMLFormElement, fieldName: string): string {
