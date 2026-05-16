@@ -39,3 +39,4 @@
 
 - Check `ISSUES.md` before starting feature work; it is the clearest verified breakdown of intended implementation slices and dependencies.
 - Prefer updating the real extension entrypoints over editing scaffold helper code unless the task is explicitly about the scaffold.
+- For live LeetCode request/response sanity checks, agents may use the `patrickhaahr` username; keep automated tests deterministic and mocked unless the task explicitly calls for live verification.
