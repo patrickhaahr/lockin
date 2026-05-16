@@ -160,6 +160,10 @@ h2 {
   margin: 14px 0 0;
 }
 
+.section-list {
+  margin-top: 10px;
+}
+
 .summary-list div {
   display: grid;
   gap: 4px;
@@ -180,6 +184,23 @@ h2 {
 
 .blocked-roots-form {
   margin-top: 16px;
+}
+
+.protected-settings-form {
+  margin-top: 16px;
+}
+
+.section-label {
+  margin-top: 16px;
+  color: #d8e0ff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.empty-state {
+  margin-top: 10px;
 }
 
 .list-row {

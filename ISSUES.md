@@ -53,11 +53,11 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    Implement the popup setup/settings flow for the `Tracked Profile` and `Hard Lock Window`. First-run setup should collect these values, save them, and switch the popup into normal mode. Later edits happen from the popup settings subview, where active and pending values are shown separately. Protected setting changes save as pending and only take effect on the next browser-local day.
 
    ## Acceptance criteria
-   - [ ] First-run popup setup collects the `Tracked Profile` and `Hard Lock Window` and persists them successfully.
-   - [ ] Equal hard-lock start/end values are treated as a full-day lock.
-   - [ ] After first-run save, the popup switches to regular mode.
-   - [ ] Later protected setting edits are shown as pending for tomorrow instead of replacing the active values immediately.
-   - [ ] The popup settings view clearly separates active and pending protected settings.
+   - [x] First-run popup setup collects the `Tracked Profile` and `Hard Lock Window` and persists them successfully.
+   - [x] Equal hard-lock start/end values are treated as a full-day lock.
+   - [x] After first-run save, the popup switches to regular mode.
+   - [x] Later protected setting edits are shown as pending for tomorrow instead of replacing the active values immediately.
+   - [x] The popup settings view clearly separates active and pending protected settings.
 
    ## Blocked by
    - Issue 1

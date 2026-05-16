@@ -4,20 +4,32 @@ import {
   DEFAULT_BLOCKED_ROOTS,
   createConfiguredState,
   createEmptyExtensionState,
+  formatHardLockWindow,
   isSetupRequired,
   normalizeBlockedRoot,
   normalizeExtensionState,
+  savePendingProtectedSettings,
   scheduleBlockedRootRemoval,
 } from "../../src/shared/state";
 
+const ACTIVE_PROTECTED_SETTINGS = {
+  trackedProfile: "lockin-user",
+  hardLockWindow: {
+    start: "23:00",
+    end: "09:00",
+  },
+} as const;
+
+const PENDING_PROTECTED_SETTINGS = {
+  trackedProfile: "next-user",
+  hardLockWindow: {
+    start: "22:00",
+    end: "08:00",
+  },
+} as const;
+
 function createConfiguredTestState() {
-  return createConfiguredState({
-    trackedProfile: "lockin-user",
-    hardLockWindow: {
-      start: "23:00",
-      end: "09:00",
-    },
-  });
+  return createConfiguredState(ACTIVE_PROTECTED_SETTINGS);
 }
 
 describe("shared extension state", () => {
@@ -35,6 +47,15 @@ describe("shared extension state", () => {
     expect(state.blockedRoots.active).toEqual([...DEFAULT_BLOCKED_ROOTS]);
     expect(state.pendingConfig).toBeNull();
     expect(state.verification.kind).toBe("idle");
+  });
+
+  it("formats equal hard-lock times as a full-day lock", () => {
+    expect(
+      formatHardLockWindow({
+        start: "08:30",
+        end: "08:30",
+      }),
+    ).toBe("Full-day lock (08:30 - 08:30)");
   });
 
   it("normalizes incomplete stored state into a safe shape", () => {
@@ -103,6 +124,33 @@ describe("shared extension state", () => {
     expect(nextState).not.toBeNull();
     expect(nextState?.blockedRoots.active).toEqual(["twitter.com", "x.com"]);
     expect(nextState?.blockedRoots.pendingRemoval).toEqual(["twitter.com"]);
+  });
+
+  it("saves later protected-setting edits as pending for tomorrow", () => {
+    const nextState = savePendingProtectedSettings(
+      createConfiguredTestState(),
+      PENDING_PROTECTED_SETTINGS,
+    );
+
+    expect(nextState).not.toBeNull();
+    expect(nextState?.currentConfig).toEqual(ACTIVE_PROTECTED_SETTINGS);
+    expect(nextState?.pendingConfig).toEqual(PENDING_PROTECTED_SETTINGS);
+  });
+
+  it("keeps an existing pending protected change when the active values are saved again", () => {
+    const pendingState = savePendingProtectedSettings(
+      createConfiguredTestState(),
+      PENDING_PROTECTED_SETTINGS,
+    );
+
+    expect(pendingState).not.toBeNull();
+    if (pendingState === null) {
+      throw new Error("Expected pending protected settings to be created.");
+    }
+
+    const unchangedState = savePendingProtectedSettings(pendingState, ACTIVE_PROTECTED_SETTINGS);
+
+    expect(unchangedState).toBeNull();
   });
 
   it("cancels a pending blocked root removal when the root is re-added", () => {

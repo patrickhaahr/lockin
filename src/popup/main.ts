@@ -6,11 +6,17 @@ import {
   createConfiguredState,
   formatHardLockWindow,
   isSetupRequired,
+  savePendingProtectedSettings,
   scheduleBlockedRootRemoval,
 } from "@/shared/state";
 import { escapeHtml } from "@/shared/html";
-import { ensureExtensionState, writeExtensionState } from "@/shared/storage";
-import type { ExtensionState, PopupView } from "@/shared/types";
+import {
+  createStateMutationQueue,
+  ensureExtensionState,
+  type StateMutationHandler,
+  writeExtensionState,
+} from "@/shared/storage";
+import type { ExtensionState, PopupView, ProtectedSettings } from "@/shared/types";
 import "./style.css";
 
 const root = document.querySelector("#app");
@@ -20,15 +26,20 @@ if (!(root instanceof HTMLDivElement)) {
 }
 
 const popupRoot: HTMLDivElement = root;
+const BLOCKED_ROOTS_SAVE_ERROR = "Couldn't save blocked-root changes. Try again.";
+const PROTECTED_SETTINGS_REQUIRED_ERROR = "Enter a tracked profile and both hard lock times.";
+const PROTECTED_SETTINGS_SAVE_ERROR = "Couldn't save protected settings. Try again.";
+const SETUP_SAVE_ERROR = "Couldn't save setup. Try again.";
 
 let extensionState: ExtensionState = createEmptyExtensionState();
 let popupView: PopupView = "main";
-let blockedRootsWrite: Promise<void> = Promise.resolve();
+let extensionStateMutations = createStateMutationQueue(extensionState, writeExtensionState);
 
 void initializePopup();
 
 async function initializePopup(): Promise<void> {
   extensionState = await ensureExtensionState();
+  extensionStateMutations = createStateMutationQueue(extensionState, writeExtensionState);
   renderPopup();
 }
 
@@ -67,27 +78,25 @@ async function saveInitialSetup(
   form: HTMLFormElement,
   errorMessage: HTMLParagraphElement,
 ): Promise<void> {
-  const trackedProfile = readFormValue(form, "trackedProfile").trim();
-  const hardLockStart = readFormValue(form, "hardLockStart");
-  const hardLockEnd = readFormValue(form, "hardLockEnd");
+  const settingsInput = readProtectedSettingsForm(form);
 
-  if (trackedProfile === "" || hardLockStart === "" || hardLockEnd === "") {
-    errorMessage.textContent = "Enter a tracked profile and both hard lock times.";
+  if (settingsInput === null) {
+    errorMessage.textContent = PROTECTED_SETTINGS_REQUIRED_ERROR;
     return;
   }
 
-  const nextState = createConfiguredState({
-    trackedProfile,
-    hardLockWindow: {
-      start: hardLockStart,
-      end: hardLockEnd,
-    },
-  });
+  const nextState = createConfiguredState(settingsInput);
 
-  await writeExtensionState(nextState);
-  extensionState = nextState;
   popupView = "main";
-  renderPopup();
+
+  try {
+    await runStateMutation(() => ({
+      nextState,
+      result: undefined,
+    }));
+  } catch {
+    errorMessage.textContent = SETUP_SAVE_ERROR;
+  }
 }
 
 function bindRegularView(): void {
@@ -103,6 +112,18 @@ function bindRegularView(): void {
 
   const blockedRootsForm = popupRoot.querySelector('[data-role="blocked-roots-form"]');
   const blockedRootsError = popupRoot.querySelector('[data-role="blocked-roots-error"]');
+  const protectedSettingsForm = popupRoot.querySelector('[data-role="protected-settings-form"]');
+  const protectedSettingsError = popupRoot.querySelector('[data-role="protected-settings-error"]');
+
+  if (
+    protectedSettingsForm instanceof HTMLFormElement &&
+    protectedSettingsError instanceof HTMLParagraphElement
+  ) {
+    protectedSettingsForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void saveProtectedSettings(protectedSettingsForm, protectedSettingsError);
+    });
+  }
 
   if (
     blockedRootsForm instanceof HTMLFormElement &&
@@ -118,12 +139,62 @@ function bindRegularView(): void {
   bindRootButtons("cancel-root-removal", cancelRootRemoval);
 }
 
+async function saveProtectedSettings(
+  form: HTMLFormElement,
+  errorMessage: HTMLParagraphElement,
+): Promise<void> {
+  const settingsInput = readProtectedSettingsForm(form);
+
+  if (settingsInput === null) {
+    errorMessage.textContent = PROTECTED_SETTINGS_REQUIRED_ERROR;
+    return;
+  }
+
+  let saveWasUpdated = false;
+
+  try {
+    saveWasUpdated = await runStateMutation((state) => {
+      const nextState = savePendingProtectedSettings(state, settingsInput);
+
+      return {
+        nextState,
+        result: nextState !== null,
+      };
+    });
+  } catch {
+    errorMessage.textContent = PROTECTED_SETTINGS_SAVE_ERROR;
+    return;
+  }
+
+  if (!saveWasUpdated) {
+    errorMessage.textContent = "Protected settings already match the active values.";
+    return;
+  }
+
+  errorMessage.textContent = "";
+}
+
 async function saveBlockedRoot(
   form: HTMLFormElement,
   errorMessage: HTMLParagraphElement,
 ): Promise<void> {
   const blockedRootInput = readFormValue(form, "blockedRoot");
-  const result = addBlockedRoot(extensionState, blockedRootInput);
+
+  let result: ReturnType<typeof addBlockedRoot>;
+
+  try {
+    result = await runStateMutation((state) => {
+      const mutationResult = addBlockedRoot(state, blockedRootInput);
+
+      return {
+        nextState: mutationResult.kind === "updated" ? mutationResult.state : null,
+        result: mutationResult,
+      };
+    });
+  } catch {
+    errorMessage.textContent = BLOCKED_ROOTS_SAVE_ERROR;
+    return;
+  }
 
   if (result.kind === "invalid") {
     errorMessage.textContent = "Enter a valid domain root or URL.";
@@ -135,37 +206,44 @@ async function saveBlockedRoot(
     return;
   }
 
-  await persistBlockedRootsState(result.state);
+  errorMessage.textContent = "";
   form.reset();
 }
 
 async function scheduleRootRemoval(root: string): Promise<void> {
-  const nextState = scheduleBlockedRootRemoval(extensionState, root);
-
-  if (nextState === null) {
-    return;
+  try {
+    await runStateMutation((state) => ({
+      nextState: scheduleBlockedRootRemoval(state, root),
+      result: undefined,
+    }));
+  } catch {
+    setBlockedRootsError(BLOCKED_ROOTS_SAVE_ERROR);
   }
-
-  await persistBlockedRootsState(nextState);
 }
 
 async function cancelRootRemoval(root: string): Promise<void> {
-  const nextState = cancelBlockedRootRemoval(extensionState, root);
-
-  if (nextState === null) {
-    return;
+  try {
+    await runStateMutation((state) => ({
+      nextState: cancelBlockedRootRemoval(state, root),
+      result: undefined,
+    }));
+  } catch {
+    setBlockedRootsError(BLOCKED_ROOTS_SAVE_ERROR);
   }
-
-  await persistBlockedRootsState(nextState);
 }
 
-async function persistBlockedRootsState(nextState: ExtensionState): Promise<void> {
-  extensionState = nextState;
-  renderPopup();
-  blockedRootsWrite = blockedRootsWrite.then(async () => {
-    await writeExtensionState(nextState);
-  });
-  await blockedRootsWrite;
+async function runStateMutation<TResult>(
+  mutateState: StateMutationHandler<ExtensionState, TResult>,
+): Promise<TResult> {
+  const result = await extensionStateMutations.run(mutateState);
+  const nextState = extensionStateMutations.getState();
+
+  if (nextState !== extensionState) {
+    extensionState = nextState;
+    renderPopup();
+  }
+
+  return result;
 }
 
 function bindRootButtons(
@@ -238,7 +316,7 @@ function renderMainView(state: ExtensionState): string {
         </div>
 
         <p class="lede">
-          Slice 1 wires the popup shell and shared state. Verification and blocking land in later slices.
+          Protected settings and blocked roots are saved from the popup. Verification and blocking land in later slices.
         </p>
 
         <dl class="summary-list">
@@ -283,15 +361,53 @@ function renderSettingsView(state: ExtensionState): string {
 
       <section class="panel">
         <h2>Active</h2>
-        <dl class="summary-list">
-          <div>
-            <dt>Tracked Profile</dt>
-            <dd>${escapeHtml(state.currentConfig.trackedProfile)}</dd>
+        <p class="section-label">Protected Settings</p>
+        ${renderProtectedSettingsSummary(state.currentConfig)}
+
+        <form class="form-panel protected-settings-form" data-role="protected-settings-form">
+          <label class="field">
+            <span>Tracked Profile</span>
+            <input
+              name="trackedProfile"
+              type="text"
+              autocomplete="off"
+              value="${escapeHtml(state.currentConfig.trackedProfile)}"
+              placeholder="leetcode-username"
+              required
+            />
+          </label>
+
+          <div class="time-grid">
+            <label class="field">
+              <span>Hard Lock Start</span>
+              <input
+                name="hardLockStart"
+                type="time"
+                value="${escapeHtml(state.currentConfig.hardLockWindow.start)}"
+                required
+              />
+            </label>
+
+            <label class="field">
+              <span>Hard Lock End</span>
+              <input
+                name="hardLockEnd"
+                type="time"
+                value="${escapeHtml(state.currentConfig.hardLockWindow.end)}"
+                required
+              />
+            </label>
           </div>
-          <div>
-            <dt>Hard Lock Window</dt>
-            <dd>${escapeHtml(formatHardLockWindow(state.currentConfig.hardLockWindow))}</dd>
-          </div>
+
+          <p class="detail">
+            Saving here stages protected-setting changes for tomorrow. Active and pending protected settings stay separate until the next browser-local day.
+          </p>
+          <p class="error" data-role="protected-settings-error"></p>
+          <button class="primary-button" type="submit">Save for tomorrow</button>
+        </form>
+
+        <p class="section-label">Blocked Roots</p>
+        <dl class="summary-list section-list">
           <div>
             <dt>Blocked Roots</dt>
             <dd>${renderActiveBlockedRoots(state.blockedRoots.active, state.blockedRoots.pendingRemoval)}</dd>
@@ -319,11 +435,11 @@ function renderSettingsView(state: ExtensionState): string {
 
       <section class="panel">
         <h2>Pending</h2>
-        <dl class="summary-list">
-          <div>
-            <dt>Protected Settings</dt>
-            <dd>${renderPendingProtectedSettings(state)}</dd>
-          </div>
+        <p class="section-label">Protected Settings</p>
+        ${renderPendingProtectedSettings(state)}
+
+        <p class="section-label">Blocked Root Removals</p>
+        <dl class="summary-list section-list">
           <div>
             <dt>Blocked Root Removals</dt>
             <dd>${renderPendingBlockedRoots(state.blockedRoots.pendingRemoval)}</dd>
@@ -336,10 +452,25 @@ function renderSettingsView(state: ExtensionState): string {
 
 function renderPendingProtectedSettings(state: ExtensionState): string {
   if (state.pendingConfig === null) {
-    return "No pending protected-setting changes.";
+    return '<p class="detail empty-state">No pending protected-setting changes.</p>';
   }
 
-  return `${escapeHtml(state.pendingConfig.trackedProfile)} · ${escapeHtml(formatHardLockWindow(state.pendingConfig.hardLockWindow))}`;
+  return renderProtectedSettingsSummary(state.pendingConfig);
+}
+
+function renderProtectedSettingsSummary(settings: ProtectedSettings): string {
+  return `
+    <dl class="summary-list section-list">
+      <div>
+        <dt>Tracked Profile</dt>
+        <dd>${escapeHtml(settings.trackedProfile)}</dd>
+      </div>
+      <div>
+        <dt>Hard Lock Window</dt>
+        <dd>${escapeHtml(formatHardLockWindow(settings.hardLockWindow))}</dd>
+      </div>
+    </dl>
+  `;
 }
 
 function renderActiveBlockedRoots(activeRoots: string[], pendingRemovalRoots: string[]): string {
@@ -404,4 +535,30 @@ function renderPendingBlockedRoots(roots: string[]): string {
 function readFormValue(form: HTMLFormElement, fieldName: string): string {
   const fieldValue = new FormData(form).get(fieldName);
   return typeof fieldValue === "string" ? fieldValue : "";
+}
+
+function readProtectedSettingsForm(form: HTMLFormElement): ProtectedSettings | null {
+  const trackedProfile = readFormValue(form, "trackedProfile").trim();
+  const hardLockStart = readFormValue(form, "hardLockStart");
+  const hardLockEnd = readFormValue(form, "hardLockEnd");
+
+  if (trackedProfile === "" || hardLockStart === "" || hardLockEnd === "") {
+    return null;
+  }
+
+  return {
+    trackedProfile,
+    hardLockWindow: {
+      start: hardLockStart,
+      end: hardLockEnd,
+    },
+  };
+}
+
+function setBlockedRootsError(message: string): void {
+  const blockedRootsError = popupRoot.querySelector('[data-role="blocked-roots-error"]');
+
+  if (blockedRootsError instanceof HTMLParagraphElement) {
+    blockedRootsError.textContent = message;
+  }
 }

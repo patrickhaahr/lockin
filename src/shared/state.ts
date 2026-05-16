@@ -64,7 +64,15 @@ export function isSetupRequired(state: ExtensionState): boolean {
 }
 
 export function formatHardLockWindow(hardLockWindow: HardLockWindow): string {
+  if (isFullDayHardLockWindow(hardLockWindow)) {
+    return `Full-day lock (${hardLockWindow.start} - ${hardLockWindow.end})`;
+  }
+
   return `${hardLockWindow.start} - ${hardLockWindow.end}`;
+}
+
+export function isFullDayHardLockWindow(hardLockWindow: HardLockWindow): boolean {
+  return hardLockWindow.start === hardLockWindow.end;
 }
 
 export function normalizeExtensionState(value: unknown): ExtensionState {
@@ -185,6 +193,29 @@ export function cancelBlockedRootRemoval(
   };
 }
 
+export function savePendingProtectedSettings(
+  state: ExtensionState,
+  settingsInput: ProtectedSettings,
+): ExtensionState | null {
+  if (state.currentConfig === null) {
+    return createConfiguredState(settingsInput);
+  }
+
+  const nextPendingConfig = createProtectedSettings(settingsInput);
+  const matchesCurrentConfig = isSameProtectedSettings(state.currentConfig, nextPendingConfig);
+  const matchesPendingConfig =
+    state.pendingConfig !== null && isSameProtectedSettings(state.pendingConfig, nextPendingConfig);
+
+  if (matchesCurrentConfig || matchesPendingConfig) {
+    return null;
+  }
+
+  return {
+    ...state,
+    pendingConfig: nextPendingConfig,
+  };
+}
+
 export function isBlockedRootConfigured(blockedRoots: BlockedRootsState, root: string): boolean {
   return blockedRoots.active.includes(root) || blockedRoots.pendingRemoval.includes(root);
 }
@@ -197,6 +228,14 @@ function createProtectedSettings(setupInput: ProtectedSettings): ProtectedSettin
       end: setupInput.hardLockWindow.end,
     },
   };
+}
+
+function isSameProtectedSettings(left: ProtectedSettings, right: ProtectedSettings): boolean {
+  return (
+    left.trackedProfile === right.trackedProfile &&
+    left.hardLockWindow.start === right.hardLockWindow.start &&
+    left.hardLockWindow.end === right.hardLockWindow.end
+  );
 }
 
 function hasScheme(value: string): boolean {
