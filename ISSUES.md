@@ -91,12 +91,12 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    Implement the shared verification flow that queries LeetCode’s public GraphQL endpoint for the most recent accepted submission of the configured `Tracked Profile`. Use browser-local date logic to decide whether the `Daily Solve Gate` is satisfied for today. Treat invalid usernames as `Setup required`, network/API failures as `Verification failed`, and cache only successful “allowed today” results for the current browser-local day.
 
    ## Acceptance criteria
-   - [ ] The verification flow fetches the latest accepted submission from LeetCode GraphQL.
-   - [ ] A same-day accepted submission satisfies the `Daily Solve Gate` for the current browser-local day.
-   - [ ] A repeated accepted solve on an already-solved problem still counts for today.
-   - [ ] Invalid usernames are surfaced as `Setup required`.
-   - [ ] LeetCode/network failures are surfaced as `Verification failed`.
-   - [ ] Successful allow state is cached for the current browser-local day; blocked results are not cached.
+   - [x] The verification flow fetches the latest accepted submission from LeetCode GraphQL.
+   - [x] A same-day accepted submission satisfies the `Daily Solve Gate` for the current browser-local day.
+   - [x] A repeated accepted solve on an already-solved problem still counts for today.
+   - [x] Invalid usernames are surfaced as `Setup required`.
+   - [x] LeetCode/network failures are surfaced as `Verification failed`.
+   - [x] Successful allow state is cached for the current browser-local day; blocked results are not cached.
 
    ## Blocked by
    - Issue 1

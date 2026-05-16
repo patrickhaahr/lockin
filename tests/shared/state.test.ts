@@ -6,6 +6,7 @@ import {
   createEmptyExtensionState,
   formatHardLockWindow,
   getProtectedSettingsChangeAvailability,
+  isWithinHardLockWindow,
   isSetupRequired,
   normalizeBlockedRoot,
   normalizeExtensionState,
@@ -95,6 +96,41 @@ describe("shared extension state", () => {
     expect(state.protectedSettingsChangeLock.lastChangedOnBrowserLocalDay).toBeNull();
     expect(state.verification.kind).toBe("allowedToday");
     expect(state.verification.lastAcceptedSolveAt).toBeNull();
+    expect(state.verification.allowCacheBrowserLocalDay).toBeNull();
+  });
+
+  it("treats equal hard-lock times as a full-day lock window", () => {
+    expect(
+      isWithinHardLockWindow(
+        {
+          start: "08:30",
+          end: "08:30",
+        },
+        new Date(2026, 4, 16, 14, 15, 0),
+      ),
+    ).toBe(true);
+  });
+
+  it("treats overnight hard-lock windows as blocking before the end time", () => {
+    expect(
+      isWithinHardLockWindow(
+        {
+          start: "23:00",
+          end: "09:00",
+        },
+        new Date(2026, 4, 16, 7, 30, 0),
+      ),
+    ).toBe(true);
+
+    expect(
+      isWithinHardLockWindow(
+        {
+          start: "23:00",
+          end: "09:00",
+        },
+        new Date(2026, 4, 16, 14, 30, 0),
+      ),
+    ).toBe(false);
   });
 
   it("normalizes blocked roots from bare domains and urls", () => {

@@ -26,6 +26,7 @@ export default defineManifest({
     },
   ],
   permissions: ["storage", "sidePanel"],
+  host_permissions: ["https://leetcode.com/*"],
   side_panel: {
     default_path: "src/sidepanel/index.html",
   },

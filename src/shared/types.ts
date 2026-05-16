@@ -25,6 +25,7 @@ export type VerificationStatus = {
   kind: VerificationStateKind;
   checkedAt: string | null;
   lastAcceptedSolveAt: string | null;
+  allowCacheBrowserLocalDay: string | null;
 };
 
 export type ProtectedSettingsChangeLock = {
