@@ -1,21 +1,26 @@
 import {
-  createStateMutationQueue,
   ensureExtensionState,
-  type StateMutationQueue,
-  writeExtensionState,
+  readExtensionState,
+  writeVerificationStatus,
 } from "@/shared/storage";
+import { MANUAL_VERIFICATION_DEBOUNCE_MS } from "@/shared/constants";
 import {
   runDailySolveGateVerification,
   VERIFY_DAILY_SOLVE_GATE_MESSAGE_TYPE,
   type VerifyDailySolveGateRequest,
   type VerifyDailySolveGateResponse,
 } from "@/shared/verification";
-import type { ExtensionState } from "@/shared/types";
+import { createManualVerificationScheduler } from "./manual-verification-scheduler";
 
-let extensionStateQueuePromise: Promise<StateMutationQueue<ExtensionState>> | null = null;
+const manualVerificationScheduler = createManualVerificationScheduler(
+  runVerificationAgainstLatestState,
+  {
+    cooldownMs: MANUAL_VERIFICATION_DEBOUNCE_MS,
+  },
+);
 
 function initializeExtensionState(): void {
-  void getExtensionStateQueue();
+  void ensureExtensionState();
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -33,20 +38,7 @@ chrome.runtime.onStartup.addListener(initializeExtensionState);
 async function handleVerifyDailySolveGateMessage(
   sendResponse: (response: VerifyDailySolveGateResponse) => void,
 ): Promise<void> {
-  const extensionStateQueue = await getExtensionStateQueue();
-  const currentState = extensionStateQueue.getState();
-  const verificationResult = await runDailySolveGateVerification(currentState);
-  const response = await extensionStateQueue.run((latestState) => ({
-    nextState: {
-      ...latestState,
-      verification: verificationResult.nextState.verification,
-    },
-    result: {
-      verification: verificationResult.nextState.verification,
-      usedCache: verificationResult.usedCache,
-    },
-  }));
-
+  const response = await manualVerificationScheduler.request();
   sendResponse(response);
 }
 
@@ -59,12 +51,15 @@ function isVerifyDailySolveGateRequest(message: unknown): message is VerifyDaily
   );
 }
 
-async function getExtensionStateQueue(): Promise<StateMutationQueue<ExtensionState>> {
-  if (extensionStateQueuePromise === null) {
-    extensionStateQueuePromise = ensureExtensionState().then((initialState) =>
-      createStateMutationQueue(initialState, writeExtensionState),
-    );
-  }
+async function runVerificationAgainstLatestState(): Promise<VerifyDailySolveGateResponse> {
+  const currentState = await readExtensionState();
+  const verificationResult = await runDailySolveGateVerification(currentState);
+  const verification = verificationResult.nextState.verification;
 
-  return extensionStateQueuePromise;
+  await writeVerificationStatus(verification);
+
+  return {
+    verification,
+    usedCache: verificationResult.usedCache,
+  };
 }

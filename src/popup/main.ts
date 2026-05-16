@@ -11,6 +11,8 @@ import {
   scheduleBlockedRootRemoval,
 } from "@/shared/state";
 import { escapeHtml } from "@/shared/html";
+import { MANUAL_VERIFICATION_DEBOUNCE_MS } from "@/shared/constants";
+import { requestDailySolveGateVerification } from "@/shared/verification";
 import {
   renderProtectedSettingsForm,
   renderProtectedSettingsSummary,
@@ -19,9 +21,11 @@ import {
   createStateMutationQueue,
   ensureExtensionState,
   type StateMutationHandler,
+  writeVerificationStatus,
   writeExtensionState,
 } from "@/shared/storage";
 import type { ExtensionState, PopupView, ProtectedSettings } from "@/shared/types";
+import { getPopupStatusViewModel } from "./status";
 import "./style.css";
 
 const root = document.querySelector("#app");
@@ -35,10 +39,16 @@ const BLOCKED_ROOTS_SAVE_ERROR = "Couldn't save blocked-root changes. Try again.
 const PROTECTED_SETTINGS_REQUIRED_ERROR = "Enter a tracked profile and both hard lock times.";
 const PROTECTED_SETTINGS_SAVE_ERROR = "Couldn't save protected settings. Try again.";
 const SETUP_SAVE_ERROR = "Couldn't save setup. Try again.";
+const POST_SETUP_VERIFICATION_ERROR =
+  "Setup was saved, but the immediate verification could not be completed. Try Check now.";
 
 let extensionState: ExtensionState = createEmptyExtensionState();
 let popupView: PopupView = "main";
 let extensionStateMutations = createStateMutationQueue(extensionState, writeExtensionState);
+let popupVerificationPromise: Promise<void> | null = null;
+let popupVerificationCooldownUntil = 0;
+let popupVerificationCooldownTimer: number | null = null;
+let regularViewErrorMessage = "";
 
 void initializePopup();
 
@@ -95,12 +105,17 @@ async function saveInitialSetup(
   popupView = "main";
 
   try {
-    await runStateMutation(() => ({
-      nextState,
-      result: undefined,
-    }));
+    await saveConfiguredSetup(nextState);
   } catch {
     errorMessage.textContent = SETUP_SAVE_ERROR;
+    return;
+  }
+
+  try {
+    await runPopupVerification(true);
+  } catch {
+    regularViewErrorMessage = POST_SETUP_VERIFICATION_ERROR;
+    renderPopup();
   }
 }
 
@@ -113,6 +128,10 @@ function bindRegularView(): void {
   popupRoot.querySelector('[data-action="close-settings"]')?.addEventListener("click", () => {
     popupView = "main";
     renderPopup();
+  });
+
+  popupRoot.querySelector('[data-action="check-now"]')?.addEventListener("click", () => {
+    void runPopupVerification();
   });
 
   const blockedRootsForm = popupRoot.querySelector('[data-role="blocked-roots-form"]');
@@ -312,13 +331,29 @@ function renderMainView(state: ExtensionState): string {
     throw new Error("Regular popup view requires current configuration.");
   }
 
+  const popupStatus = getPopupStatusViewModel(state);
+  const checkNowDisabled = isCheckNowDisabled();
+  const regularViewError =
+    regularViewErrorMessage === ""
+      ? ""
+      : `<p class="error">${escapeHtml(regularViewErrorMessage)}</p>`;
+  const latestAcceptedSolveRow =
+    popupStatus.lastAcceptedSolveValue === null
+      ? ""
+      : `
+          <div>
+            <dt>Latest Accepted Solve</dt>
+            <dd>${escapeHtml(popupStatus.lastAcceptedSolveValue)}</dd>
+          </div>
+        `;
+
   return `
     <main class="shell">
       <section class="panel status-panel">
         <div class="row">
           <div>
-            <p class="eyebrow">Regular mode</p>
-            <h1>Ready for verification</h1>
+            <p class="eyebrow">Status</p>
+            <h1>${escapeHtml(popupStatus.title)}</h1>
           </div>
           <button class="ghost-button icon-button" type="button" data-action="open-settings" aria-label="Open settings">
             Settings
@@ -326,8 +361,24 @@ function renderMainView(state: ExtensionState): string {
         </div>
 
         <p class="lede">
-          Protected settings and blocked roots are saved from the popup. Verification and blocking land in later slices.
+          ${escapeHtml(popupStatus.summary)}
         </p>
+
+        <div class="action-row">
+          <button
+            class="primary-button"
+            type="button"
+            data-action="check-now"
+            ${checkNowDisabled ? "disabled" : ""}
+          >
+            ${popupVerificationPromise === null ? "Check now" : "Checking..."}
+          </button>
+          <p class="detail">
+            Manual verification is debounced briefly to avoid repeated LeetCode checks.
+          </p>
+        </div>
+
+        ${regularViewError}
 
         <dl class="summary-list">
           <div>
@@ -343,9 +394,10 @@ function renderMainView(state: ExtensionState): string {
             <dd>${state.blockedRoots.active.length}</dd>
           </div>
           <div>
-            <dt>Verification Status</dt>
-            <dd>${escapeHtml(state.verification.kind)}</dd>
+            <dt>${escapeHtml(popupStatus.nextRelevantLabel)}</dt>
+            <dd>${escapeHtml(popupStatus.nextRelevantValue)}</dd>
           </div>
+          ${latestAcceptedSolveRow}
         </dl>
       </section>
     </main>
@@ -515,4 +567,73 @@ function setBlockedRootsError(message: string): void {
   if (blockedRootsError instanceof HTMLParagraphElement) {
     blockedRootsError.textContent = message;
   }
+}
+
+async function runPopupVerification(force = false): Promise<void> {
+  if (popupVerificationPromise !== null) {
+    await popupVerificationPromise;
+    return;
+  }
+
+  if (!force && isCheckNowDisabled()) {
+    return;
+  }
+
+  popupVerificationCooldownUntil = Date.now() + MANUAL_VERIFICATION_DEBOUNCE_MS;
+  schedulePopupVerificationCooldownRender();
+  regularViewErrorMessage = "";
+
+  popupVerificationPromise = requestDailySolveGateVerification()
+    .then((response) => setVerificationStatus(response.verification))
+    .catch(() =>
+      setVerificationStatus({
+        kind: "verificationFailed",
+        checkedAt: new Date().toISOString(),
+        lastAcceptedSolveAt: extensionState.verification.lastAcceptedSolveAt,
+        allowCacheBrowserLocalDay: null,
+      }),
+    )
+    .finally(() => {
+      popupVerificationPromise = null;
+      renderPopup();
+    });
+
+  renderPopup();
+
+  await popupVerificationPromise;
+}
+
+function isCheckNowDisabled(now: number = Date.now()): boolean {
+  return popupVerificationPromise !== null || now < popupVerificationCooldownUntil;
+}
+
+function schedulePopupVerificationCooldownRender(): void {
+  if (popupVerificationCooldownTimer !== null) {
+    window.clearTimeout(popupVerificationCooldownTimer);
+  }
+
+  const cooldownDelay = Math.max(0, popupVerificationCooldownUntil - Date.now());
+
+  popupVerificationCooldownTimer = window.setTimeout(() => {
+    popupVerificationCooldownTimer = null;
+    renderPopup();
+  }, cooldownDelay);
+}
+
+async function setVerificationStatus(verification: ExtensionState["verification"]): Promise<void> {
+  await writeVerificationStatus(verification);
+  await runStateMutation((state) => ({
+    nextState: {
+      ...state,
+      verification,
+    },
+    result: undefined,
+  }));
+}
+
+async function saveConfiguredSetup(nextState: ExtensionState): Promise<void> {
+  await runStateMutation(() => ({
+    nextState,
+    result: undefined,
+  }));
 }

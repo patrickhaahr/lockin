@@ -1,7 +1,8 @@
 import { createEmptyExtensionState, normalizeExtensionState } from "./state";
-import type { ExtensionState } from "./types";
+import type { ExtensionState, VerificationStatus } from "./types";
 
 const EXTENSION_STATE_KEY = "lockInState";
+const VERIFICATION_STATUS_KEY = "lockInVerificationStatus";
 
 export type StateMutation<TState, TResult> = {
   nextState: TState | null;
@@ -18,7 +19,7 @@ export type StateMutationQueue<TState> = {
 };
 
 export async function readExtensionState(): Promise<ExtensionState> {
-  return normalizeExtensionState(await readStoredState());
+  return normalizeStoredExtensionState(await readStoredState());
 }
 
 export async function writeExtensionState(state: ExtensionState): Promise<void> {
@@ -27,18 +28,31 @@ export async function writeExtensionState(state: ExtensionState): Promise<void> 
   });
 }
 
+export async function writeVerificationStatus(verification: VerificationStatus): Promise<void> {
+  await chrome.storage.local.set({
+    [VERIFICATION_STATUS_KEY]: verification,
+  });
+}
+
 export async function ensureExtensionState(): Promise<ExtensionState> {
   const storedState = await readStoredState();
-  const normalizedState = normalizeExtensionState(storedState);
+  const normalizedState = normalizeStoredExtensionState(storedState);
 
-  if (storedState === undefined) {
+  if (storedState.extensionState === undefined) {
     const emptyState = createEmptyExtensionState();
     await writeExtensionState(emptyState);
+    await writeVerificationStatus(emptyState.verification);
     return emptyState;
   }
 
-  if (JSON.stringify(storedState) !== JSON.stringify(normalizedState)) {
+  if (JSON.stringify(storedState.extensionState) !== JSON.stringify(normalizedState)) {
     await writeExtensionState(normalizedState);
+  }
+
+  if (
+    JSON.stringify(storedState.verificationStatus) !== JSON.stringify(normalizedState.verification)
+  ) {
+    await writeVerificationStatus(normalizedState.verification);
   }
 
   return normalizedState;
@@ -77,7 +91,46 @@ export function createStateMutationQueue<TState>(
 
 function noop(): void {}
 
-async function readStoredState(): Promise<unknown> {
-  const storedItems = await chrome.storage.local.get(EXTENSION_STATE_KEY);
-  return storedItems[EXTENSION_STATE_KEY];
+async function readStoredState(): Promise<{
+  extensionState: unknown;
+  verificationStatus: VerificationStatus | null;
+}> {
+  const storedItems = await chrome.storage.local.get([
+    EXTENSION_STATE_KEY,
+    VERIFICATION_STATUS_KEY,
+  ]);
+
+  return {
+    extensionState: storedItems[EXTENSION_STATE_KEY],
+    verificationStatus: isVerificationStatus(storedItems[VERIFICATION_STATUS_KEY])
+      ? storedItems[VERIFICATION_STATUS_KEY]
+      : null,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isVerificationStatus(value: unknown): value is VerificationStatus {
+  return (
+    isRecord(value) &&
+    typeof value.kind === "string" &&
+    (typeof value.checkedAt === "string" || value.checkedAt === null) &&
+    (typeof value.lastAcceptedSolveAt === "string" || value.lastAcceptedSolveAt === null) &&
+    (typeof value.allowCacheBrowserLocalDay === "string" ||
+      value.allowCacheBrowserLocalDay === null)
+  );
+}
+
+function normalizeStoredExtensionState(storedState: {
+  extensionState: unknown;
+  verificationStatus: VerificationStatus | null;
+}): ExtensionState {
+  return normalizeExtensionState({
+    ...(isRecord(storedState.extensionState) ? storedState.extensionState : {}),
+    verification:
+      storedState.verificationStatus ??
+      (isRecord(storedState.extensionState) ? storedState.extensionState.verification : undefined),
+  });
 }

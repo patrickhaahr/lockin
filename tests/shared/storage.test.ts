@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { createStateMutationQueue } from "../../src/shared/storage";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  createStateMutationQueue,
+  readExtensionState,
+  writeExtensionState,
+  writeVerificationStatus,
+} from "../../src/shared/storage";
+import { createConfiguredState } from "../../src/shared/state";
 
 function createDeferred(): {
   promise: Promise<void>;
@@ -86,5 +92,71 @@ describe("state mutation queue", () => {
 
     expect(writeAttempts).toBe(2);
     expect(queue.getState()).toBe(1);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("preserves separately persisted verification status across later state writes", async () => {
+    const storedItems: Record<string, unknown> = {};
+    vi.stubGlobal("chrome", {
+      storage: {
+        local: {
+          async get(keys: string | string[]) {
+            if (Array.isArray(keys)) {
+              return Object.fromEntries(keys.map((key) => [key, storedItems[key]]));
+            }
+
+            return {
+              [keys]: storedItems[keys],
+            };
+          },
+          async set(values: Record<string, unknown>) {
+            Object.assign(storedItems, values);
+          },
+        },
+      },
+    });
+
+    const state = createConfiguredState({
+      trackedProfile: "lockin-user",
+      hardLockWindow: {
+        start: "23:00",
+        end: "09:00",
+      },
+    });
+
+    await writeExtensionState(state);
+    await writeVerificationStatus({
+      kind: "allowedToday",
+      checkedAt: "2026-05-16T08:35:00.000Z",
+      lastAcceptedSolveAt: "2026-05-16T08:30:00.000Z",
+      allowCacheBrowserLocalDay: "2026-05-16",
+    });
+
+    await writeExtensionState({
+      ...state,
+      blockedRoots: {
+        active: [...state.blockedRoots.active, "youtube.com"],
+        pendingRemoval: [],
+      },
+      verification: {
+        kind: "idle",
+        checkedAt: null,
+        lastAcceptedSolveAt: null,
+        allowCacheBrowserLocalDay: null,
+      },
+    });
+
+    const persistedState = await readExtensionState();
+
+    expect(persistedState.blockedRoots.active).toContain("youtube.com");
+    expect(persistedState.verification).toEqual({
+      kind: "allowedToday",
+      checkedAt: "2026-05-16T08:35:00.000Z",
+      lastAcceptedSolveAt: "2026-05-16T08:30:00.000Z",
+      allowCacheBrowserLocalDay: "2026-05-16",
+    });
   });
 });

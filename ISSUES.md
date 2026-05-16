@@ -112,11 +112,11 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    Connect the popup UI to the shared verification and rule-evaluation logic. Support the five popup states: `Setup required`, `Blocked by Hard Lock`, `Blocked by Daily Solve Gate`, `Allowed Today`, and `Verification failed`. After initial setup, run one immediate verification. The regular popup should stay read-only on open, expose `Check now`, debounce repeated checks, show the latest accepted solve timestamp when available, and show the next relevant unlock time or condition.
 
    ## Acceptance criteria
-   - [ ] The popup renders the five agreed top-level states.
-   - [ ] Opening the popup does not automatically verify, except for the one post-setup verification.
-   - [ ] `Check now` triggers the shared verification flow and is debounced against repeated clicks.
-   - [ ] The popup shows the latest accepted solve timestamp when available.
-   - [ ] The popup shows the next relevant unlock time or condition for blocked states.
+   - [x] The popup renders the five agreed top-level states.
+   - [x] Opening the popup does not automatically verify, except for the one post-setup verification.
+   - [x] `Check now` triggers the shared verification flow and is debounced against repeated clicks.
+   - [x] The popup shows the latest accepted solve timestamp when available.
+   - [x] The popup shows the next relevant unlock time or condition for blocked states.
 
    ## Blocked by
    - Issue 3
