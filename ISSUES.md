@@ -14,11 +14,10 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    Create the Manifest V3 extension scaffold using TypeScript and Vite, with a service worker, popup entrypoint, block-page entrypoint, shared storage/types, and a minimal popup shell that can render first-run setup mode or regular mode based on saved configuration.
 
    ## Acceptance criteria
-
-   - [ ] The extension builds and loads as a Manifest V3 extension in Chromium-based browsers.
-   - [ ] The popup can render setup mode when required settings are missing.
-   - [ ] Shared extension state/types exist for current config, pending config, blocked roots, and verification status.
-   - [ ] The popup has a regular-mode shell with a settings entrypoint and in-popup subview navigation.
+   - [x] The extension builds and loads as a Manifest V3 extension in Chromium-based browsers.
+   - [x] The popup can render setup mode when required settings are missing.
+   - [x] Shared extension state/types exist for current config, pending config, blocked roots, and verification status.
+   - [x] The popup has a regular-mode shell with a settings entrypoint and in-popup subview navigation.
 
    ## Blocked by
 
@@ -34,7 +33,6 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    Build blocked-root management in the popup settings subview. Start from default Twitter/X roots on initial setup, accept bare roots or full URLs, normalize to root domains with public-suffix-aware parsing, reject redundant roots across active and pending state, apply additions immediately, and schedule removals for the next browser-local day. Show active and pending blocked roots in separate sections.
 
    ## Acceptance criteria
-
    - [ ] First-run setup persists the default Twitter/X blocked roots without asking the user to configure them.
    - [ ] Settings accept either a bare root or a full URL and normalize to a lowercase root domain.
    - [ ] Redundant blocked roots are rejected against both active and pending state.
@@ -43,7 +41,6 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    - [ ] Re-adding a root that is pending removal cancels that pending removal.
 
    ## Blocked by
-
    - Issue 1
 
 3. **Title**: Save first-run setup and delayed protected settings from the popup
@@ -56,7 +53,6 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    Implement the popup setup/settings flow for the `Tracked Profile` and `Hard Lock Window`. First-run setup should collect these values, save them, and switch the popup into normal mode. Later edits happen from the popup settings subview, where active and pending values are shown separately. Protected setting changes save as pending and only take effect on the next browser-local day.
 
    ## Acceptance criteria
-
    - [ ] First-run popup setup collects the `Tracked Profile` and `Hard Lock Window` and persists them successfully.
    - [ ] Equal hard-lock start/end values are treated as a full-day lock.
    - [ ] After first-run save, the popup switches to regular mode.
@@ -64,7 +60,6 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    - [ ] The popup settings view clearly separates active and pending protected settings.
 
    ## Blocked by
-
    - Issue 1
 
 4. **Title**: Enforce daily change lock for protected settings
@@ -77,7 +72,6 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    Add the once-per-browser-local-day change lock for protected settings. The initial setup save is free. After that, only one real change per browser-local day is allowed across the `Tracked Profile` and `Hard Lock Window`, and once a pending protected change exists, it cannot be edited again until the next browser-local day.
 
    ## Acceptance criteria
-
    - [ ] First-run setup does not consume the daily protected-settings change allowance.
    - [ ] A real protected-settings change consumes the day’s one allowed protected change.
    - [ ] Saving unchanged protected values does not consume the day’s allowance.
@@ -85,7 +79,6 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    - [ ] The popup explains when the next protected change becomes available.
 
    ## Blocked by
-
    - Issue 3
 
 5. **Title**: Verify the Daily Solve Gate from LeetCode accepted submissions
@@ -98,7 +91,6 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    Implement the shared verification flow that queries LeetCode’s public GraphQL endpoint for the most recent accepted submission of the configured `Tracked Profile`. Use browser-local date logic to decide whether the `Daily Solve Gate` is satisfied for today. Treat invalid usernames as `Setup required`, network/API failures as `Verification failed`, and cache only successful “allowed today” results for the current browser-local day.
 
    ## Acceptance criteria
-
    - [ ] The verification flow fetches the latest accepted submission from LeetCode GraphQL.
    - [ ] A same-day accepted submission satisfies the `Daily Solve Gate` for the current browser-local day.
    - [ ] A repeated accepted solve on an already-solved problem still counts for today.
@@ -107,7 +99,6 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    - [ ] Successful allow state is cached for the current browser-local day; blocked results are not cached.
 
    ## Blocked by
-
    - Issue 1
    - Issue 3
 
@@ -121,7 +112,6 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    Connect the popup UI to the shared verification and rule-evaluation logic. Support the five popup states: `Setup required`, `Blocked by Hard Lock`, `Blocked by Daily Solve Gate`, `Allowed Today`, and `Verification failed`. After initial setup, run one immediate verification. The regular popup should stay read-only on open, expose `Check now`, debounce repeated checks, show the latest accepted solve timestamp when available, and show the next relevant unlock time or condition.
 
    ## Acceptance criteria
-
    - [ ] The popup renders the five agreed top-level states.
    - [ ] Opening the popup does not automatically verify, except for the one post-setup verification.
    - [ ] `Check now` triggers the shared verification flow and is debounced against repeated clicks.
@@ -129,7 +119,6 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    - [ ] The popup shows the next relevant unlock time or condition for blocked states.
 
    ## Blocked by
-
    - Issue 3
    - Issue 5
 
@@ -143,14 +132,12 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    Implement blocked-site enforcement in the service worker by detecting navigations to active blocked roots and redirecting them to the local block page in the same tab whenever the `Hard Lock Window` or `Daily Solve Gate` requires blocking. Preserve the original blocked destination for later retry.
 
    ## Acceptance criteria
-
    - [ ] Navigations to active blocked roots are redirected to the block page in the same tab when access should be denied.
    - [ ] The original blocked destination is preserved and available for retry.
    - [ ] Subdomains of active blocked roots are enforced.
    - [ ] Access is allowed immediately when the current state permits it.
 
    ## Blocked by
-
    - Issue 2
    - Issue 5
 
@@ -164,14 +151,12 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    Create the local block page shown for denied blocked-site access. It should render different copy for `Blocked by Hard Lock` and `Blocked by Daily Solve Gate`, display the blocked hostname or URL, show the latest accepted solve timestamp when available, show the next relevant unlock time or condition, automatically verify once on load, and offer a debounced `Check again` action that uses the shared verification flow and returns to the original destination when access becomes allowed.
 
    ## Acceptance criteria
-
    - [ ] The block page explains whether the denial came from the `Hard Lock Window` or the `Daily Solve Gate`.
    - [ ] The original blocked destination is visible to the user.
    - [ ] The block page verifies once on load and also supports a debounced `Check again` action.
    - [ ] When access becomes allowed, retry returns the user to the original destination.
 
    ## Blocked by
-
    - Issue 5
    - Issue 7
 
@@ -185,14 +170,12 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    Schedule and handle extension alarms for hard-lock start, hard-lock end, and local midnight. These transitions should update active state, clear stale day-based allow cache when needed, activate next-day pending settings/removals, and redirect already-open blocked-site tabs whenever the new state requires blocking.
 
    ## Acceptance criteria
-
    - [ ] The extension schedules reevaluation at hard-lock start, hard-lock end, and local midnight.
    - [ ] Local midnight activates pending protected settings and pending blocked-site removals.
    - [ ] Local midnight resets the day-based allow cache.
    - [ ] Already-open matching tabs are redirected when a transition causes them to become blocked.
 
    ## Blocked by
-
    - Issue 5
    - Issue 7
 
@@ -206,13 +189,11 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
     When a user adds a new blocked root in settings, immediately reevaluate open tabs and redirect any matching tab to the block page if the current state requires blocking. This keeps blocked-root additions consistent with the rest of active enforcement.
 
     ## Acceptance criteria
-
     - [ ] Adding a blocked root immediately reevaluates currently open matching tabs.
     - [ ] Matching tabs are redirected right away when the current state requires blocking.
     - [ ] Matching tabs remain untouched when the current state allows access.
 
     ## Blocked by
-
     - Issue 2
     - Issue 5
     - Issue 7
