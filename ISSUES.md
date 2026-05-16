@@ -5,6 +5,7 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
 ## Proposed Breakdown
 
 1. **Title**: Scaffold MV3 extension with popup shell and shared state model
+   **Status**: done
    **Type**: AFK
    **Blocked by**: None
    **User stories covered**: first-run popup setup foundation, popup-first architecture, Vite + TypeScript setup
@@ -24,6 +25,7 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    None - can start immediately
 
 2. **Title**: Implement blocked-root configuration with immediate adds and pending removals
+   **Status**: done
    **Type**: AFK
    **Blocked by**: 1
    **User stories covered**: configurable blocked sites, default Twitter/X roots, immediate additions, next-day removals
@@ -44,6 +46,7 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    - Issue 1
 
 3. **Title**: Save first-run setup and delayed protected settings from the popup
+   **Status**: done
    **Type**: AFK
    **Blocked by**: 1
    **User stories covered**: first-run setup, tracked profile configuration, hard lock window configuration, current vs pending settings
@@ -63,6 +66,7 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    - Issue 1
 
 4. **Title**: Enforce daily change lock for protected settings
+   **Status**: done
    **Type**: AFK
    **Blocked by**: 3
    **User stories covered**: once-per-day changes, anti-bypass behavior, first-run setup exemption
@@ -82,6 +86,7 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    - Issue 3
 
 5. **Title**: Verify the Daily Solve Gate from LeetCode accepted submissions
+   **Status**: done
    **Type**: AFK
    **Blocked by**: 1, 3
    **User stories covered**: accepted-solve detection, browser-local-day gate, invalid profile handling, failure states
@@ -103,6 +108,7 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    - Issue 3
 
 6. **Title**: Drive popup status states and manual verification actions
+   **Status**: done
    **Type**: AFK
    **Blocked by**: 3, 5
    **User stories covered**: status-first popup, check-now flow, first-run follow-up verification, status details
@@ -123,6 +129,7 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    - Issue 5
 
 7. **Title**: Redirect blocked navigations to the local Block Page
+   **Status**: pending
    **Type**: AFK
    **Blocked by**: 2, 5
    **User stories covered**: same-tab blocking, preserved original destination, all blocked roots covered
@@ -142,6 +149,7 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    - Issue 5
 
 8. **Title**: Build the Block Page with reason-aware copy and retry flow
+   **Status**: pending
    **Type**: AFK
    **Blocked by**: 5, 7
    **User stories covered**: reason-specific block page, check-again flow, original destination visibility
@@ -161,6 +169,7 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    - Issue 7
 
 9. **Title**: Enforce alarms for hard-lock and day-boundary transitions
+   **Status**: pending
    **Type**: AFK
    **Blocked by**: 5, 7
    **User stories covered**: active enforcement at 11pm, 9am, and midnight
@@ -180,6 +189,7 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    - Issue 7
 
 10. **Title**: Apply immediate enforcement for newly added blocked roots
+    **Status**: pending
     **Type**: AFK
     **Blocked by**: 2, 5, 7
     **User stories covered**: immediate blocked-root additions, active enforcement consistency
