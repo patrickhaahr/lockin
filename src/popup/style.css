@@ -1,99 +1,179 @@
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  color: #f4f7fb;
+  background: #101423;
+  font-family: Inter, system-ui, sans-serif;
+  font-synthesis: none;
   line-height: 1.5;
   font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
-  font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 450px;
-  min-height: 100vh;
+  min-width: 360px;
+  background: radial-gradient(circle at top, rgba(77, 119, 255, 0.28), transparent 48%), #101423;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-#app {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
-}
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.vanilla:hover {
-  filter: drop-shadow(0 0 2em #3178c6aa);
-}
-.logo.crx:hover {
-  filter: drop-shadow(0 0 2em #f2bae4aa);
-}
-
-.card {
-  padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
+button,
+input {
+  font: inherit;
 }
 
 button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
   cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
+#app {
+  width: 100%;
+}
+
+.shell {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.panel {
+  border: 1px solid rgba(164, 180, 255, 0.18);
+  border-radius: 16px;
+  background: rgba(10, 15, 30, 0.88);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.24);
+  padding: 16px;
+}
+
+.hero-panel {
+  background: linear-gradient(180deg, rgba(62, 88, 210, 0.45), rgba(10, 15, 30, 0.88));
+}
+
+.status-panel {
+  gap: 16px;
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: #94a6ff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 1.4rem;
+  line-height: 1.2;
+}
+
+h2 {
+  margin-bottom: 12px;
+  font-size: 1rem;
+}
+
+.lede {
+  margin-top: 10px;
+  color: #c5d0f7;
+}
+
+.form-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  font-size: 0.92rem;
+}
+
+.field span {
+  color: #d8e0ff;
+  font-weight: 600;
+}
+
+.field input {
+  width: 100%;
+  border: 1px solid rgba(164, 180, 255, 0.18);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  padding: 10px 12px;
+}
+
+.time-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.detail {
+  color: #9fb0e5;
+  font-size: 0.88rem;
+}
+
+.error {
+  min-height: 1.25rem;
+  color: #ffb4c5;
+  font-size: 0.88rem;
+}
+
+.primary-button,
+.ghost-button,
+.icon-button {
+  border: 1px solid rgba(164, 180, 255, 0.22);
+  border-radius: 999px;
+  padding: 10px 14px;
+}
+
+.primary-button {
+  background: #8aa4ff;
+  color: #101423;
+  font-weight: 700;
+}
+
+.ghost-button,
+.icon-button {
+  background: transparent;
+  color: #eef2ff;
+}
+
+.summary-list {
+  display: grid;
+  gap: 12px;
+  margin: 14px 0 0;
+}
+
+.summary-list div {
+  display: grid;
+  gap: 4px;
+}
+
+.summary-list dt {
+  color: #95a4d9;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.summary-list dd {
+  margin: 0;
+  color: #f4f7fb;
 }

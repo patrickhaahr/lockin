@@ -1,28 +1,38 @@
-import { defineManifest } from '@crxjs/vite-plugin'
-import pkg from './package.json'
+import { defineManifest } from "@crxjs/vite-plugin";
+import pkg from "./package.json";
 
 export default defineManifest({
   manifest_version: 3,
   name: pkg.name,
   version: pkg.version,
+  description: "Block configured distracting sites until the daily solve gate is satisfied.",
   icons: {
-    48: 'public/logo.png',
+    48: "public/logo.png",
+  },
+  background: {
+    service_worker: "src/background/main.ts",
+    type: "module",
   },
   action: {
     default_icon: {
-      48: 'public/logo.png',
+      48: "public/logo.png",
     },
-    default_popup: 'src/popup/index.html',
+    default_popup: "src/popup/index.html",
   },
-  content_scripts: [{
-    js: ['src/content/main.ts'],
-    matches: ['https://*/*'],
-  }],
-  permissions: [
-    'sidePanel',
-    'contentSettings',
+  content_scripts: [
+    {
+      js: ["src/content/main.ts"],
+      matches: ["https://*/*"],
+    },
   ],
+  permissions: ["storage", "sidePanel"],
   side_panel: {
-    default_path: 'src/sidepanel/index.html',
+    default_path: "src/sidepanel/index.html",
   },
-})
+  web_accessible_resources: [
+    {
+      resources: ["src/block/index.html"],
+      matches: ["<all_urls>"],
+    },
+  ],
+});
