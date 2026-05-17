@@ -5,6 +5,7 @@ import {
   createConfiguredState,
   createEmptyExtensionState,
   formatHardLockWindow,
+  getActiveBlockedRootForHostname,
   getProtectedSettingsChangeAvailability,
   isWithinHardLockWindow,
   isSetupRequired,
@@ -138,6 +139,16 @@ describe("shared extension state", () => {
     expect(normalizeBlockedRoot("https://mobile.twitter.com/home")).toBe("twitter.com");
     expect(normalizeBlockedRoot("https://foo.github.io/path")).toBe("foo.github.io");
     expect(normalizeBlockedRoot("not a domain")).toBeNull();
+  });
+
+  it("matches blocked roots against subdomains of active roots", () => {
+    const state = createConfiguredTestState();
+
+    expect(getActiveBlockedRootForHostname(state.blockedRoots, "mobile.twitter.com")).toBe(
+      "twitter.com",
+    );
+    expect(getActiveBlockedRootForHostname(state.blockedRoots, "api.x.com")).toBe("x.com");
+    expect(getActiveBlockedRootForHostname(state.blockedRoots, "leetcode.com")).toBeNull();
   });
 
   it("adds a normalized blocked root immediately", () => {

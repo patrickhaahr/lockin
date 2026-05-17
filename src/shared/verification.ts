@@ -54,6 +54,15 @@ export type VerifyDailySolveGateResponse = {
   usedCache: boolean;
 };
 
+export type BlockedSiteVerificationDecision =
+  | {
+      kind: "allow";
+    }
+  | {
+      kind: "block";
+      reason: "setupRequired" | "blockedByHardLock" | "blockedByDailySolveGate";
+    };
+
 export async function requestDailySolveGateVerification(): Promise<VerifyDailySolveGateResponse> {
   return chrome.runtime.sendMessage({
     type: VERIFY_DAILY_SOLVE_GATE_MESSAGE_TYPE,
@@ -65,8 +74,9 @@ export async function runDailySolveGateVerification(
   options: DailySolveGateVerificationOptions = {},
 ): Promise<DailySolveGateVerificationResult> {
   const now = options.now ?? new Date();
+  const precheckedDecision = getBlockedSiteVerificationDecision(state, now);
 
-  if (isSetupRequired(state)) {
+  if (precheckedDecision.kind === "block" && precheckedDecision.reason === "setupRequired") {
     return {
       nextState: {
         ...state,
@@ -76,7 +86,7 @@ export async function runDailySolveGateVerification(
     };
   }
 
-  if (hasAllowCacheForBrowserLocalDay(state.verification, now)) {
+  if (precheckedDecision.kind === "allow") {
     return {
       nextState: {
         ...state,
@@ -122,6 +132,39 @@ export async function runDailySolveGateVerification(
       usedCache: false,
     };
   }
+}
+
+export function getBlockedSiteVerificationDecision(
+  state: ExtensionState,
+  now: Date = new Date(),
+): BlockedSiteVerificationDecision {
+  if (isSetupRequired(state)) {
+    return {
+      kind: "block",
+      reason: "setupRequired",
+    };
+  }
+
+  if (
+    state.currentConfig !== null &&
+    isWithinHardLockWindow(state.currentConfig.hardLockWindow, now)
+  ) {
+    return {
+      kind: "block",
+      reason: "blockedByHardLock",
+    };
+  }
+
+  if (hasAllowCacheForBrowserLocalDay(state.verification, now)) {
+    return {
+      kind: "allow",
+    };
+  }
+
+  return {
+    kind: "block",
+    reason: "blockedByDailySolveGate",
+  };
 }
 
 export function hasAllowCacheForBrowserLocalDay(

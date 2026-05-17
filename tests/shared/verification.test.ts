@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { createConfiguredState } from "../../src/shared/state";
-import { runDailySolveGateVerification } from "../../src/shared/verification";
+import { createConfiguredState, createEmptyExtensionState } from "../../src/shared/state";
+import {
+  getBlockedSiteVerificationDecision,
+  runDailySolveGateVerification,
+} from "../../src/shared/verification";
 
 const ACTIVE_PROTECTED_SETTINGS = {
   trackedProfile: "lockin-user",
@@ -51,6 +54,56 @@ function createJsonResponse(body: unknown): Response {
 }
 
 describe("daily solve gate verification", () => {
+  it("blocks blocked-site loads immediately when setup is still required", () => {
+    expect(
+      getBlockedSiteVerificationDecision(
+        createEmptyExtensionState(),
+        createLocalDate(2026, 4, 15, 18, 0),
+      ),
+    ).toEqual({
+      kind: "block",
+      reason: "setupRequired",
+    });
+  });
+
+  it("blocks blocked-site loads immediately during the hard lock window", () => {
+    expect(
+      getBlockedSiteVerificationDecision(
+        createConfiguredTestState(),
+        createLocalDate(2026, 4, 16, 7, 30),
+      ),
+    ).toEqual({
+      kind: "block",
+      reason: "blockedByHardLock",
+    });
+  });
+
+  it("skips re-verification when today already has an allow cache", () => {
+    const state = createConfiguredTestState();
+    state.verification = {
+      kind: "allowedToday",
+      checkedAt: createLocalDate(2026, 4, 15, 12, 30).toISOString(),
+      lastAcceptedSolveAt: createLocalDate(2026, 4, 15, 12, 0).toISOString(),
+      allowCacheBrowserLocalDay: "2026-05-15",
+    };
+
+    expect(getBlockedSiteVerificationDecision(state, createLocalDate(2026, 4, 15, 18, 0))).toEqual({
+      kind: "allow",
+    });
+  });
+
+  it("blocks blocked-site loads immediately without a current-day allow cache", () => {
+    expect(
+      getBlockedSiteVerificationDecision(
+        createConfiguredTestState(),
+        createLocalDate(2026, 4, 15, 18, 0),
+      ),
+    ).toEqual({
+      kind: "block",
+      reason: "blockedByDailySolveGate",
+    });
+  });
+
   it("fetches the latest accepted submission from LeetCode GraphQL", async () => {
     const now = createLocalDate(2026, 4, 15, 18, 0);
     const acceptedSolveAt = createLocalDate(2026, 4, 15, 12, 0);

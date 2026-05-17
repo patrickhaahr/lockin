@@ -131,7 +131,7 @@ Enforcement note: Issue 7's original same-tab redirect approach is not implement
    - Issue 5
 
 7. **Title**: Replace blocked-site tab bodies with the Block Page
-   **Status**: pending
+   **Status**: done
    **Type**: AFK
    **Blocked by**: 2, 5
    **User stories covered**: same-tab blocking, preserved original destination, all blocked roots covered
@@ -141,10 +141,10 @@ Enforcement note: Issue 7's original same-tab redirect approach is not implement
    Implement blocked-site enforcement by detecting loads on active blocked roots and replacing the current document body with the `Block Page` whenever the `Hard Lock Window` or `Daily Solve Gate` requires blocking. Preserve the original blocked destination for later retry and keep the user in the same tab on the original blocked URL.
 
    ## Acceptance criteria
-   - [ ] Loads on active blocked roots are replaced with the `Block Page` in the same tab when access should be denied.
-   - [ ] The original blocked destination is preserved and available for retry.
-   - [ ] Subdomains of active blocked roots are enforced.
-   - [ ] Access is allowed immediately when the current state permits it.
+   - [x] Loads on active blocked roots are replaced with the `Block Page` in the same tab when access should be denied.
+   - [x] The original blocked destination is preserved and available for retry.
+   - [x] Subdomains of active blocked roots are enforced.
+   - [x] Access is allowed immediately when the current state permits it.
 
    ## Blocked by
    - Issue 2
@@ -191,19 +191,19 @@ Enforcement note: Issue 7's original same-tab redirect approach is not implement
    - Issue 7
 
 10. **Title**: Apply immediate enforcement for newly added blocked roots
-     **Status**: pending
-     **Type**: AFK
-     **Blocked by**: 2, 5, 7
-     **User stories covered**: immediate blocked-root additions, active enforcement consistency
+    **Status**: pending
+    **Type**: AFK
+    **Blocked by**: 2, 5, 7
+    **User stories covered**: immediate blocked-root additions, active enforcement consistency
 
-     ## What to build
+    ## What to build
 
-     When a user adds a new blocked root in settings, immediately reevaluate open tabs and replace any matching tab body with the `Block Page` if the current state requires blocking. This keeps blocked-root additions consistent with the rest of active enforcement.
+    When a user adds a new blocked root in settings, immediately reevaluate open tabs and replace any matching tab body with the `Block Page` if the current state requires blocking. This keeps blocked-root additions consistent with the rest of active enforcement.
 
-     ## Acceptance criteria
-     - [ ] Adding a blocked root immediately reevaluates currently open matching tabs.
-     - [ ] Matching tabs are replaced right away with the `Block Page` when the current state requires blocking.
-     - [ ] Matching tabs remain untouched when the current state allows access.
+    ## Acceptance criteria
+    - [ ] Adding a blocked root immediately reevaluates currently open matching tabs.
+    - [ ] Matching tabs are replaced right away with the `Block Page` when the current state requires blocking.
+    - [ ] Matching tabs remain untouched when the current state allows access.
 
     ## Blocked by
     - Issue 2

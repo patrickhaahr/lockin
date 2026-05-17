@@ -327,6 +327,19 @@ export function isBlockedRootConfigured(blockedRoots: BlockedRootsState, root: s
   return blockedRoots.active.includes(root) || blockedRoots.pendingRemoval.includes(root);
 }
 
+export function getActiveBlockedRootForHostname(
+  blockedRoots: BlockedRootsState,
+  hostname: string,
+): string | null {
+  const normalizedRoot = normalizeBlockedRoot(hostname);
+
+  if (normalizedRoot === null) {
+    return null;
+  }
+
+  return blockedRoots.active.includes(normalizedRoot) ? normalizedRoot : null;
+}
+
 function createProtectedSettings(setupInput: ProtectedSettings): ProtectedSettings {
   return {
     trackedProfile: setupInput.trackedProfile.trim(),
