@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createBlockPageViewModel, mountBlockPage } from "../../src/block/view";
 import {
   enforceBlockedSiteForCurrentLocation,
   replacePageWithBlockPage,
@@ -122,13 +123,16 @@ class FakeDocument {
 type TestReplacePageWindow = Parameters<typeof replacePageWithBlockPage>[4];
 
 function useFakeDomGlobals(): () => void {
+  const previousHTMLElement = globalThis.HTMLElement;
   const previousShadowRoot = globalThis.ShadowRoot;
   const previousCssStyleSheet = globalThis.CSSStyleSheet;
 
+  globalThis.HTMLElement = FakeElement as unknown as typeof HTMLElement;
   globalThis.ShadowRoot = FakeShadowRoot as unknown as typeof ShadowRoot;
   globalThis.CSSStyleSheet = FakeCssStyleSheet as unknown as typeof CSSStyleSheet;
 
   return function restore(): void {
+    globalThis.HTMLElement = previousHTMLElement;
     globalThis.ShadowRoot = previousShadowRoot;
     globalThis.CSSStyleSheet = previousCssStyleSheet;
   };
@@ -391,6 +395,8 @@ describe("content blocked-site enforcement", () => {
     expect(host.id).toBe("lockin-block-page");
     expect(host.getAttribute("aria-label")).toBe("LockIn blocked twitter.com");
     expect(host.shadowRoot?.children).toHaveLength(1);
+    expect(host.shadowRoot?.adoptedStyleSheets[0]?.cssText).toContain("background-image");
+    expect(host.shadowRoot?.adoptedStyleSheets[0]?.cssText).not.toContain("@import");
 
     const panel = getRenderedPanel(fakeDocument);
     const detailsList = panel?.children[3];
@@ -411,6 +417,10 @@ describe("content blocked-site enforcement", () => {
     expect(latestSolveRow?.children[1]?.textContent).toBe("2026-05-16 00:00");
     expect(nextUnlockRow?.children[1]?.textContent).toContain("09:00");
     expect(button?.textContent).toBe("Check again");
+    expect(host.shadowRoot?.children[0]?.children[3]?.tagName).toBe("style");
+    expect(host.shadowRoot?.children[0]?.children[3]?.textContent).toContain(
+      "fonts.googleapis.com",
+    );
   });
 
   it("verifies once on load and restores the original destination when access becomes allowed", async () => {
@@ -679,6 +689,36 @@ describe("content blocked-site enforcement", () => {
     } finally {
       restoreGlobals();
     }
+  });
+
+  it("injects block page component styles when mounting into a normal element", () => {
+    const restoreGlobals = useFakeDomGlobals();
+    const fakeDocument = new FakeDocument();
+    const root = fakeDocument.createElement("div");
+
+    try {
+      mountBlockPage(
+        root as unknown as HTMLElement,
+        createBlockPageViewModel(
+          createConfiguredTestState(),
+          "setupRequired",
+          "https://example.com/home",
+        ),
+      );
+    } finally {
+      restoreGlobals();
+    }
+
+    expect(root.children).toHaveLength(2);
+    expect(root.children[0]?.tagName).toBe("style");
+    expect(root.children[0]?.textContent).toContain(".panel");
+    expect(root.children[0]?.textContent).toContain("fonts.googleapis.com");
+    expect(root.children[0]?.textContent).toContain(".page {");
+    expect(root.children[0]?.textContent).toContain("transparent 1.6px");
+    expect(root.children[0]?.textContent).not.toContain("rgba(229, 57, 53, 0.12)");
+    expect(root.children[0]?.textContent).not.toContain(":host {");
+    expect(root.children[1]?.className).toBe("page");
+    expect(root.children[1]?.children[0]?.className).toBe("panel");
   });
 });
 
