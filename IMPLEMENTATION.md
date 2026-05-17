@@ -27,6 +27,8 @@ This file records current implementation decisions for the first version of the 
 - Popup top-level states: `Setup required`, `Blocked by Hard Lock`, `Blocked by Daily Solve Gate`, `Allowed Today`, and `Verification failed`.
 - Time basis: browser local time.
 - Blocking scope: configurable blocked hostnames, defaulting to `twitter.com`, `x.com`, and related subdomains such as `www` and `mobile`.
+- Blocked-site enforcement mechanism: replace the current blocked tab body in place instead of redirecting to a separate extension page.
+- Blocked-site enforcement rationale: Chrome MV3 does not provide a reliable synchronous same-tab redirect mechanism for this extension architecture.
 - Blocked sites input model: users configure domain roots, and the extension includes subdomains automatically.
 - Blocked sites mutation rules: additions are immediate and unlimited; removals are allowed at any time but only take effect on the next browser-local day.
 - Blocked sites immediate enforcement: newly added roots are enforced against already-open matching tabs right away when the current state requires blocking.
@@ -57,8 +59,8 @@ This file records current implementation decisions for the first version of the 
 - Protected settings activation: changes to the `Hard Lock Window` or `Tracked Profile` are stored immediately but only take effect on the next browser-local day.
 - Protected settings pending lock: once a pending protected change exists, it cannot be edited again until the next browser-local day.
 - Repeat accepted submissions: count as valid for the day even if the problem was solved before.
-- Active enforcement: redirect already-open blocked-site tabs when the hard lock starts or the browser-local day resets into a blocked state.
-- Block page behavior: show the reason, recent status, preserve the original destination, and re-check on load with a manual retry button.
+- Active enforcement: replace already-open blocked-site tab bodies when the hard lock starts or the browser-local day resets into a blocked state.
+- Block page behavior: show the reason, recent status, preserve the original destination, and re-check on load with a manual retry button while keeping the blocked tab on its original URL.
 - Status detail: show the most recent accepted solve timestamp even when today's gate is not satisfied.
 - Status detail: show the next relevant unlock time or condition.
 - Manual override: none.

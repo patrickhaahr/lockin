@@ -4,6 +4,8 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
 
 ## Proposed Breakdown
 
+Enforcement note: Issue 7's original same-tab redirect approach is not implementable as written under Chrome MV3 for this extension. The remaining enforcement slices now use in-tab body replacement instead of navigation redirect.
+
 1. **Title**: Scaffold MV3 extension with popup shell and shared state model
    **Status**: done
    **Type**: AFK
@@ -128,7 +130,7 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
    - Issue 3
    - Issue 5
 
-7. **Title**: Redirect blocked navigations to the local Block Page
+7. **Title**: Replace blocked-site tab bodies with the Block Page
    **Status**: pending
    **Type**: AFK
    **Blocked by**: 2, 5
@@ -136,10 +138,10 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
 
    ## What to build
 
-   Implement blocked-site enforcement in the service worker by detecting navigations to active blocked roots and redirecting them to the local block page in the same tab whenever the `Hard Lock Window` or `Daily Solve Gate` requires blocking. Preserve the original blocked destination for later retry.
+   Implement blocked-site enforcement by detecting loads on active blocked roots and replacing the current document body with the `Block Page` whenever the `Hard Lock Window` or `Daily Solve Gate` requires blocking. Preserve the original blocked destination for later retry and keep the user in the same tab on the original blocked URL.
 
    ## Acceptance criteria
-   - [ ] Navigations to active blocked roots are redirected to the block page in the same tab when access should be denied.
+   - [ ] Loads on active blocked roots are replaced with the `Block Page` in the same tab when access should be denied.
    - [ ] The original blocked destination is preserved and available for retry.
    - [ ] Subdomains of active blocked roots are enforced.
    - [ ] Access is allowed immediately when the current state permits it.
@@ -156,13 +158,13 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
 
    ## What to build
 
-   Create the local block page shown for denied blocked-site access. It should render different copy for `Blocked by Hard Lock` and `Blocked by Daily Solve Gate`, display the blocked hostname or URL, show the latest accepted solve timestamp when available, show the next relevant unlock time or condition, automatically verify once on load, and offer a debounced `Check again` action that uses the shared verification flow and returns to the original destination when access becomes allowed.
+   Create the `Block Page` content shown for denied blocked-site access inside the blocked tab. It should render different copy for `Blocked by Hard Lock` and `Blocked by Daily Solve Gate`, display the blocked hostname or URL, show the latest accepted solve timestamp when available, show the next relevant unlock time or condition, automatically verify once on load, and offer a debounced `Check again` action that uses the shared verification flow and restores the original page when access becomes allowed.
 
    ## Acceptance criteria
    - [ ] The block page explains whether the denial came from the `Hard Lock Window` or the `Daily Solve Gate`.
    - [ ] The original blocked destination is visible to the user.
    - [ ] The block page verifies once on load and also supports a debounced `Check again` action.
-   - [ ] When access becomes allowed, retry returns the user to the original destination.
+   - [ ] When access becomes allowed, retry restores the original destination in the current tab.
 
    ## Blocked by
    - Issue 5
@@ -176,32 +178,32 @@ These are tracer-bullet implementation slices derived from the agreed plan. Each
 
    ## What to build
 
-   Schedule and handle extension alarms for hard-lock start, hard-lock end, and local midnight. These transitions should update active state, clear stale day-based allow cache when needed, activate next-day pending settings/removals, and redirect already-open blocked-site tabs whenever the new state requires blocking.
+   Schedule and handle extension alarms for hard-lock start, hard-lock end, and local midnight. These transitions should update active state, clear stale day-based allow cache when needed, activate next-day pending settings/removals, and replace already-open blocked-site tab bodies whenever the new state requires blocking.
 
    ## Acceptance criteria
    - [ ] The extension schedules reevaluation at hard-lock start, hard-lock end, and local midnight.
    - [ ] Local midnight activates pending protected settings and pending blocked-site removals.
    - [ ] Local midnight resets the day-based allow cache.
-   - [ ] Already-open matching tabs are redirected when a transition causes them to become blocked.
+   - [ ] Already-open matching tabs are replaced with the `Block Page` when a transition causes them to become blocked.
 
    ## Blocked by
    - Issue 5
    - Issue 7
 
 10. **Title**: Apply immediate enforcement for newly added blocked roots
-    **Status**: pending
-    **Type**: AFK
-    **Blocked by**: 2, 5, 7
-    **User stories covered**: immediate blocked-root additions, active enforcement consistency
+     **Status**: pending
+     **Type**: AFK
+     **Blocked by**: 2, 5, 7
+     **User stories covered**: immediate blocked-root additions, active enforcement consistency
 
-    ## What to build
+     ## What to build
 
-    When a user adds a new blocked root in settings, immediately reevaluate open tabs and redirect any matching tab to the block page if the current state requires blocking. This keeps blocked-root additions consistent with the rest of active enforcement.
+     When a user adds a new blocked root in settings, immediately reevaluate open tabs and replace any matching tab body with the `Block Page` if the current state requires blocking. This keeps blocked-root additions consistent with the rest of active enforcement.
 
-    ## Acceptance criteria
-    - [ ] Adding a blocked root immediately reevaluates currently open matching tabs.
-    - [ ] Matching tabs are redirected right away when the current state requires blocking.
-    - [ ] Matching tabs remain untouched when the current state allows access.
+     ## Acceptance criteria
+     - [ ] Adding a blocked root immediately reevaluates currently open matching tabs.
+     - [ ] Matching tabs are replaced right away with the `Block Page` when the current state requires blocking.
+     - [ ] Matching tabs remain untouched when the current state allows access.
 
     ## Blocked by
     - Issue 2

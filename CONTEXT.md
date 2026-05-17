@@ -29,7 +29,7 @@ The LeetCode username that the extension checks when evaluating the **Daily Solv
 _Avoid_: account, session, login
 
 **Block Page**:
-A local extension page shown when a **Blocked Site** is denied, explaining why access is blocked.
+A local extension-rendered blocking view shown inside the current tab when a **Blocked Site** is denied, explaining why access is blocked and allowing retry.
 _Avoid_: error page, blank page, failed load
 
 ## Relationships
@@ -53,3 +53,4 @@ _Avoid_: error page, blank page, failed load
 - "unlock" previously implied a temporary overnight exception; resolved: access to **Blocked Sites** is governed by a **Daily Solve Gate** plus a separate **Hard Lock Window**.
 - "today" was ambiguous between local time and remote service time; resolved: it means the **Browser-Local Day**.
 - An **Accepted Solve** during `11:00pm-11:59pm` does not carry into the next **Browser-Local Day**; resolved: the **Daily Solve Gate** resets at local midnight.
+- "Block Page" previously implied a navigation redirect to a separate extension URL; resolved: under Chrome MV3 enforcement it is rendered by replacing the blocked tab body in place.
