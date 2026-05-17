@@ -5,6 +5,7 @@ import {
   writeVerificationStatus,
 } from "@/shared/storage";
 import { MANUAL_VERIFICATION_DEBOUNCE_MS } from "@/shared/constants";
+import { normalizeExtensionState } from "@/shared/state";
 import { synchronizeBrowserLocalDayState } from "@/shared/state-transitions";
 import {
   runDailySolveGateVerification,
@@ -56,11 +57,25 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     return;
   }
 
-  if (!didCurrentConfigChange(changes[EXTENSION_STATE_KEY])) {
+  const extensionStateChange = readExtensionStateChange(changes[EXTENSION_STATE_KEY]);
+
+  if (extensionStateChange === null) {
     return;
   }
 
-  void syncTransitionAlarms();
+  if (didCurrentConfigChange(extensionStateChange)) {
+    void syncTransitionAlarms();
+  }
+
+  if (didAddActiveBlockedRoot(extensionStateChange.previousState, extensionStateChange.nextState)) {
+    void reevaluateOpenTabs(
+      extensionStateChange.nextState,
+      extensionStateChange.previousState,
+      undefined,
+      undefined,
+      "newlyBlockedRootsOnly",
+    );
+  }
 });
 
 export async function initializeBackgroundState(): Promise<void> {
@@ -128,21 +143,35 @@ async function runVerificationAgainstLatestState(): Promise<VerifyDailySolveGate
   };
 }
 
-function didCurrentConfigChange(storageChange: chrome.storage.StorageChange | undefined): boolean {
-  if (storageChange === undefined) {
-    return false;
-  }
-
+function didCurrentConfigChange(storageChange: {
+  nextState: ReturnType<typeof normalizeExtensionState>;
+  previousState: ReturnType<typeof normalizeExtensionState>;
+}): boolean {
   return (
-    JSON.stringify(readCurrentConfig(storageChange.oldValue)) !==
-    JSON.stringify(readCurrentConfig(storageChange.newValue))
+    JSON.stringify(storageChange.previousState.currentConfig) !==
+    JSON.stringify(storageChange.nextState.currentConfig)
   );
 }
 
-function readCurrentConfig(value: unknown): unknown {
-  if (typeof value !== "object" || value === null || !("currentConfig" in value)) {
+function didAddActiveBlockedRoot(
+  previousState: ReturnType<typeof normalizeExtensionState>,
+  nextState: ReturnType<typeof normalizeExtensionState>,
+): boolean {
+  return nextState.blockedRoots.active.some(
+    (blockedRoot) => !previousState.blockedRoots.active.includes(blockedRoot),
+  );
+}
+
+function readExtensionStateChange(storageChange: chrome.storage.StorageChange | undefined): {
+  nextState: ReturnType<typeof normalizeExtensionState>;
+  previousState: ReturnType<typeof normalizeExtensionState>;
+} | null {
+  if (storageChange === undefined) {
     return null;
   }
 
-  return value.currentConfig;
+  return {
+    nextState: normalizeExtensionState(storageChange.newValue),
+    previousState: normalizeExtensionState(storageChange.oldValue),
+  };
 }

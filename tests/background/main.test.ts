@@ -25,6 +25,20 @@ type ChromeStub = {
   };
 };
 
+type StorageChangeLike = {
+  oldValue?: unknown;
+  newValue?: unknown;
+};
+
+function getStorageChangeListener(
+  chromeStub: ChromeStub,
+): (changes: Record<string, StorageChangeLike>, areaName: string) => void {
+  return chromeStub.storage.onChanged.addListener.mock.calls[0][0] as (
+    changes: Record<string, StorageChangeLike>,
+    areaName: string,
+  ) => void;
+}
+
 const ensureExtensionState = vi.fn();
 const readExtensionState = vi.fn();
 const writeExtensionState = vi.fn();
@@ -285,5 +299,84 @@ describe("background transition handling", () => {
       }),
       state,
     );
+  });
+
+  it("reevaluates open tabs when storage adds an active blocked root", async () => {
+    const previousState = createConfiguredState({
+      trackedProfile: "lockin-user",
+      hardLockWindow: {
+        start: "23:00",
+        end: "09:00",
+      },
+    });
+    const nextState = {
+      ...previousState,
+      blockedRoots: {
+        ...previousState.blockedRoots,
+        active: [...previousState.blockedRoots.active, "linkedin.com"],
+      },
+    };
+
+    await import("../../src/background/main");
+
+    const storageListener = getStorageChangeListener(
+      (globalThis as typeof globalThis & { chrome: ChromeStub }).chrome,
+    );
+
+    storageListener(
+      {
+        lockInState: {
+          oldValue: previousState,
+          newValue: nextState,
+        },
+      },
+      "local",
+    );
+
+    expect(reevaluateOpenTabs).toHaveBeenCalledWith(
+      nextState,
+      previousState,
+      undefined,
+      undefined,
+      "newlyBlockedRootsOnly",
+    );
+    expect(scheduleTransitionAlarms).not.toHaveBeenCalled();
+  });
+
+  it("does not reevaluate open tabs when blocked-root changes do not add active roots", async () => {
+    const previousState = createConfiguredState({
+      trackedProfile: "lockin-user",
+      hardLockWindow: {
+        start: "23:00",
+        end: "09:00",
+      },
+    });
+    const nextState = {
+      ...previousState,
+      blockedRoots: {
+        ...previousState.blockedRoots,
+        pendingRemoval: ["twitter.com"],
+        pendingRemovalScheduledOnBrowserLocalDay: "2026-05-17",
+      },
+    };
+
+    await import("../../src/background/main");
+
+    const storageListener = getStorageChangeListener(
+      (globalThis as typeof globalThis & { chrome: ChromeStub }).chrome,
+    );
+
+    storageListener(
+      {
+        lockInState: {
+          oldValue: previousState,
+          newValue: nextState,
+        },
+      },
+      "local",
+    );
+
+    expect(reevaluateOpenTabs).not.toHaveBeenCalled();
+    expect(scheduleTransitionAlarms).not.toHaveBeenCalled();
   });
 });

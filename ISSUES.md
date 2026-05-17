@@ -191,7 +191,7 @@ Enforcement note: Issue 7's original same-tab redirect approach is not implement
    - Issue 7
 
 10. **Title**: Apply immediate enforcement for newly added blocked roots
-    **Status**: pending
+    **Status**: done
     **Type**: AFK
     **Blocked by**: 2, 5, 7
     **User stories covered**: immediate blocked-root additions, active enforcement consistency
@@ -201,9 +201,9 @@ Enforcement note: Issue 7's original same-tab redirect approach is not implement
     When a user adds a new blocked root in settings, immediately reevaluate open tabs and replace any matching tab body with the `Block Page` if the current state requires blocking. This keeps blocked-root additions consistent with the rest of active enforcement.
 
     ## Acceptance criteria
-    - [ ] Adding a blocked root immediately reevaluates currently open matching tabs.
-    - [ ] Matching tabs are replaced right away with the `Block Page` when the current state requires blocking.
-    - [ ] Matching tabs remain untouched when the current state allows access.
+    - [x] Adding a blocked root immediately reevaluates currently open matching tabs.
+    - [x] Matching tabs are replaced right away with the `Block Page` when the current state requires blocking.
+    - [x] Matching tabs remain untouched when the current state allows access.
 
     ## Blocked by
     - Issue 2

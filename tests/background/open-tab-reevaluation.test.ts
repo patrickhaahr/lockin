@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { reevaluateOpenTabs } from "../../src/background/open-tab-reevaluation";
+import { getBrowserLocalDay } from "../../src/shared/state";
 import { REEVALUATE_BLOCKED_SITE_MESSAGE_TYPE } from "../../src/shared/runtime-messages";
 import { createConfiguredState } from "../../src/shared/state";
 
@@ -79,6 +80,133 @@ describe("open-tab reevaluation", () => {
       reload,
       sendMessage,
     });
+
+    expect(reload).toHaveBeenCalledWith(1);
+  });
+
+  it("reloads tabs for newly added blocked roots when access should now be blocked", async () => {
+    const previousState = createConfiguredState({
+      trackedProfile: "lockin-user",
+      hardLockWindow: {
+        start: "23:00",
+        end: "09:00",
+      },
+    });
+    const nextState = createConfiguredState({
+      trackedProfile: "lockin-user",
+      hardLockWindow: {
+        start: "23:00",
+        end: "09:00",
+      },
+    });
+    nextState.blockedRoots.active = [...nextState.blockedRoots.active, "linkedin.com"];
+
+    const query = vi
+      .fn<() => Promise<TabLike[]>>()
+      .mockResolvedValue([{ id: 1, url: "https://www.linkedin.com/feed/" }]);
+    const sendMessage = vi
+      .fn<(tabId: number, message: unknown) => Promise<void>>()
+      .mockRejectedValue(new Error("receiving end does not exist"));
+    const reload = vi.fn<(tabId: number) => Promise<void>>().mockResolvedValue(undefined);
+
+    await reevaluateOpenTabs(
+      nextState,
+      previousState,
+      {
+        query,
+        reload,
+        sendMessage,
+      },
+      new Date("2026-05-15T18:00:00"),
+      "newlyBlockedRootsOnly",
+    );
+
+    expect(reload).toHaveBeenCalledWith(1);
+  });
+
+  it("leaves newly added blocked-root tabs untouched when access is currently allowed", async () => {
+    const previousState = createConfiguredState({
+      trackedProfile: "lockin-user",
+      hardLockWindow: {
+        start: "23:00",
+        end: "09:00",
+      },
+    });
+    const nextState = createConfiguredState({
+      trackedProfile: "lockin-user",
+      hardLockWindow: {
+        start: "23:00",
+        end: "09:00",
+      },
+    });
+    const allowedAt = new Date(2026, 4, 15, 18, 0, 0, 0);
+
+    nextState.blockedRoots.active = [...nextState.blockedRoots.active, "linkedin.com"];
+    nextState.verification = {
+      kind: "allowedToday",
+      checkedAt: allowedAt.toISOString(),
+      lastAcceptedSolveAt: allowedAt.toISOString(),
+      allowCacheBrowserLocalDay: getBrowserLocalDay(allowedAt),
+    };
+
+    const query = vi
+      .fn<() => Promise<TabLike[]>>()
+      .mockResolvedValue([{ id: 1, url: "https://www.linkedin.com/feed/" }]);
+    const sendMessage = vi
+      .fn<(tabId: number, message: unknown) => Promise<void>>()
+      .mockRejectedValue(new Error("receiving end does not exist"));
+    const reload = vi.fn<(tabId: number) => Promise<void>>().mockResolvedValue(undefined);
+
+    await reevaluateOpenTabs(
+      nextState,
+      previousState,
+      {
+        query,
+        reload,
+        sendMessage,
+      },
+      allowedAt,
+      "newlyBlockedRootsOnly",
+    );
+
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("preserves generic reevaluation reloads when blocked-root tabs become allowed", async () => {
+    const state = createConfiguredState({
+      trackedProfile: "lockin-user",
+      hardLockWindow: {
+        start: "23:00",
+        end: "09:00",
+      },
+    });
+    const allowedAt = new Date(2026, 4, 15, 18, 0, 0, 0);
+
+    state.verification = {
+      kind: "allowedToday",
+      checkedAt: allowedAt.toISOString(),
+      lastAcceptedSolveAt: allowedAt.toISOString(),
+      allowCacheBrowserLocalDay: getBrowserLocalDay(allowedAt),
+    };
+
+    const query = vi
+      .fn<() => Promise<TabLike[]>>()
+      .mockResolvedValue([{ id: 1, url: "https://x.com/home" }]);
+    const sendMessage = vi
+      .fn<(tabId: number, message: unknown) => Promise<void>>()
+      .mockRejectedValue(new Error("receiving end does not exist"));
+    const reload = vi.fn<(tabId: number) => Promise<void>>().mockResolvedValue(undefined);
+
+    await reevaluateOpenTabs(
+      state,
+      state,
+      {
+        query,
+        reload,
+        sendMessage,
+      },
+      allowedAt,
+    );
 
     expect(reload).toHaveBeenCalledWith(1);
   });
