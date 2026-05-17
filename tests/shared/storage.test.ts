@@ -140,6 +140,7 @@ describe("state mutation queue", () => {
       blockedRoots: {
         active: [...state.blockedRoots.active, "youtube.com"],
         pendingRemoval: [],
+        pendingRemovalScheduledOnBrowserLocalDay: null,
       },
       verification: {
         kind: "idle",

@@ -60,6 +60,8 @@ describe("shared extension state", () => {
     expect(isSetupRequired(state)).toBe(false);
     expect(state.blockedRoots.active).toEqual([...DEFAULT_BLOCKED_ROOTS]);
     expect(state.pendingConfig).toBeNull();
+    expect(state.blockedRoots.pendingRemovalScheduledOnBrowserLocalDay).toBeNull();
+    expect(state.lastProcessedBrowserLocalDay).toBeNull();
     expect(state.protectedSettingsChangeLock.lastChangedOnBrowserLocalDay).toBeNull();
     expect(state.verification.kind).toBe("idle");
   });
@@ -94,6 +96,8 @@ describe("shared extension state", () => {
     expect(state.currentConfig?.trackedProfile).toBe("lockin-user");
     expect(state.blockedRoots.active).toEqual(["twitter.com"]);
     expect(state.blockedRoots.pendingRemoval).toEqual([]);
+    expect(state.blockedRoots.pendingRemovalScheduledOnBrowserLocalDay).toBeNull();
+    expect(state.lastProcessedBrowserLocalDay).toBeNull();
     expect(state.protectedSettingsChangeLock.lastChangedOnBrowserLocalDay).toBeNull();
     expect(state.verification.kind).toBe("allowedToday");
     expect(state.verification.lastAcceptedSolveAt).toBeNull();
@@ -168,7 +172,11 @@ describe("shared extension state", () => {
 
   it("rejects redundant blocked roots across active and pending state", () => {
     const state = createConfiguredTestState();
-    const pendingRemovalState = scheduleBlockedRootRemoval(state, "twitter.com");
+    const pendingRemovalState = scheduleBlockedRootRemoval(
+      state,
+      "twitter.com",
+      new Date("2026-05-16T12:00:00"),
+    );
 
     expect(addBlockedRoot(state, "mobile.twitter.com").kind).toBe("duplicate");
     expect(pendingRemovalState).not.toBeNull();
@@ -180,11 +188,16 @@ describe("shared extension state", () => {
   });
 
   it("schedules blocked root removals for the next day", () => {
-    const nextState = scheduleBlockedRootRemoval(createConfiguredTestState(), "twitter.com");
+    const nextState = scheduleBlockedRootRemoval(
+      createConfiguredTestState(),
+      "twitter.com",
+      new Date("2026-05-16T12:00:00"),
+    );
 
     expect(nextState).not.toBeNull();
     expect(nextState?.blockedRoots.active).toEqual(["twitter.com", "x.com"]);
     expect(nextState?.blockedRoots.pendingRemoval).toEqual(["twitter.com"]);
+    expect(nextState?.blockedRoots.pendingRemovalScheduledOnBrowserLocalDay).toBe("2026-05-16");
   });
 
   it("saves later protected-setting edits as pending for tomorrow", () => {
@@ -337,7 +350,11 @@ describe("shared extension state", () => {
 
   it("cancels a pending blocked root removal when the root is re-added", () => {
     const state = createConfiguredTestState();
-    const pendingRemovalState = scheduleBlockedRootRemoval(state, "twitter.com");
+    const pendingRemovalState = scheduleBlockedRootRemoval(
+      state,
+      "twitter.com",
+      new Date("2026-05-16T12:00:00"),
+    );
 
     expect(pendingRemovalState).not.toBeNull();
     if (pendingRemovalState === null) {
@@ -353,5 +370,6 @@ describe("shared extension state", () => {
 
     expect(result.state.blockedRoots.active).toEqual(["twitter.com", "x.com"]);
     expect(result.state.blockedRoots.pendingRemoval).toEqual([]);
+    expect(result.state.blockedRoots.pendingRemovalScheduledOnBrowserLocalDay).toBeNull();
   });
 });

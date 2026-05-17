@@ -26,7 +26,7 @@ export default defineManifest({
       run_at: "document_start",
     },
   ],
-  permissions: ["storage", "sidePanel"],
+  permissions: ["alarms", "storage", "sidePanel", "tabs"],
   host_permissions: ["https://leetcode.com/*"],
   side_panel: {
     default_path: "src/sidepanel/index.html",

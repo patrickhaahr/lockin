@@ -11,6 +11,7 @@ export type ProtectedSettings = {
 export type BlockedRootsState = {
   active: string[];
   pendingRemoval: string[];
+  pendingRemovalScheduledOnBrowserLocalDay: string | null;
 };
 
 export type VerificationStateKind =
@@ -36,6 +37,7 @@ export type ExtensionState = {
   currentConfig: ProtectedSettings | null;
   pendingConfig: ProtectedSettings | null;
   blockedRoots: BlockedRootsState;
+  lastProcessedBrowserLocalDay: string | null;
   protectedSettingsChangeLock: ProtectedSettingsChangeLock;
   verification: VerificationStatus;
 };

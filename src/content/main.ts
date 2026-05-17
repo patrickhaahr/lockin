@@ -1,5 +1,9 @@
 import { createBlockPageViewModel, mountBlockPage } from "@/block/view";
 import { MANUAL_VERIFICATION_DEBOUNCE_MS } from "@/shared/constants";
+import {
+  REEVALUATE_BLOCKED_SITE_MESSAGE_TYPE,
+  type ReevaluateBlockedSiteRequest,
+} from "@/shared/runtime-messages";
 import { readExtensionState } from "@/shared/storage";
 import { getActiveBlockedRootForHostname } from "@/shared/state";
 import type { ExtensionState } from "@/shared/types";
@@ -43,11 +47,30 @@ export type BlockPageDependencies = {
   scheduleTimeout?: ScheduleTimeout;
 };
 
-async function runContentScript(): Promise<void> {
-  const state = await readExtensionState();
-  const action = resolveBlockedSiteLoadAction(state, window.location.href);
+export type BlockedSiteEnforcementDependencies = BlockPageDependencies & {
+  documentRef?: Document;
+  locationHref?: string;
+  windowRef?: ReplacePageWindow;
+};
+
+export async function enforceBlockedSiteForCurrentLocation(
+  dependencies: BlockedSiteEnforcementDependencies = {},
+): Promise<void> {
+  const readState = dependencies.readState ?? readExtensionState;
+  const documentRef = dependencies.documentRef ?? document;
+  const now = dependencies.now?.() ?? new Date();
+  const state = await readState();
+  const locationHref = dependencies.locationHref ?? window.location.href;
+  const windowRef = dependencies.windowRef ?? window;
+  const action = resolveBlockedSiteLoadAction(state, locationHref, now);
 
   if (action.kind === "allow") {
+    if (documentRef.documentElement.dataset.lockInBlocked === "true") {
+      windowRef.location.replace(
+        documentRef.documentElement.dataset.lockInOriginalDestination ?? locationHref,
+      );
+    }
+
     return;
   }
 
@@ -55,6 +78,9 @@ async function runContentScript(): Promise<void> {
     action.originalDestination,
     action.blockedRoot,
     action.blockedReason,
+    documentRef,
+    windowRef,
+    dependencies,
   );
 }
 
@@ -95,14 +121,11 @@ export function replacePageWithBlockPage(
   windowRef: ReplacePageWindow = window,
   dependencies: BlockPageDependencies = {},
 ): Promise<void> {
-  if (documentRef.documentElement.dataset.lockInBlocked === "true") {
-    return Promise.resolve();
-  }
-
   windowRef.stop();
 
   const htmlElement = documentRef.documentElement;
   htmlElement.dataset.lockInBlocked = "true";
+  htmlElement.dataset.lockInOriginalDestination = originalDestination;
   const head = documentRef.createElement("head");
   const body = documentRef.createElement("body");
   const title = documentRef.createElement("title");
@@ -258,5 +281,23 @@ async function renderBlockPage(
 }
 
 if (typeof window !== "undefined" && typeof document !== "undefined") {
-  void runContentScript();
+  chrome.runtime.onMessage.addListener((message) => {
+    if (!isReevaluateBlockedSiteRequest(message)) {
+      return false;
+    }
+
+    void enforceBlockedSiteForCurrentLocation();
+    return false;
+  });
+
+  void enforceBlockedSiteForCurrentLocation();
+}
+
+function isReevaluateBlockedSiteRequest(message: unknown): message is ReevaluateBlockedSiteRequest {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    "type" in message &&
+    message.type === REEVALUATE_BLOCKED_SITE_MESSAGE_TYPE
+  );
 }

@@ -49,7 +49,9 @@ export function createEmptyExtensionState(): ExtensionState {
     blockedRoots: {
       active: [],
       pendingRemoval: [],
+      pendingRemovalScheduledOnBrowserLocalDay: null,
     },
+    lastProcessedBrowserLocalDay: null,
     protectedSettingsChangeLock: createProtectedSettingsChangeLock(),
     verification: createIdleVerificationStatus(),
   };
@@ -62,7 +64,9 @@ export function createConfiguredState(setupInput: ProtectedSettings): ExtensionS
     blockedRoots: {
       active: [...DEFAULT_BLOCKED_ROOTS],
       pendingRemoval: [],
+      pendingRemovalScheduledOnBrowserLocalDay: null,
     },
+    lastProcessedBrowserLocalDay: null,
     protectedSettingsChangeLock: createProtectedSettingsChangeLock(),
     verification: createIdleVerificationStatus(),
   };
@@ -92,6 +96,33 @@ export function isFullDayHardLockWindow(hardLockWindow: HardLockWindow): boolean
   return hardLockWindow.start === hardLockWindow.end;
 }
 
+export function parseClockTime(value: string): { hours: number; minutes: number } | null {
+  const match = /^(\d{2}):(\d{2})$/u.exec(value);
+
+  if (match === null) {
+    return null;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+
+  if (
+    !Number.isInteger(hours) ||
+    !Number.isInteger(minutes) ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return null;
+  }
+
+  return {
+    hours,
+    minutes,
+  };
+}
+
 export function normalizeExtensionState(value: unknown): ExtensionState {
   if (!isRecord(value)) {
     return createEmptyExtensionState();
@@ -101,6 +132,10 @@ export function normalizeExtensionState(value: unknown): ExtensionState {
     currentConfig: parseProtectedSettings(value.currentConfig),
     pendingConfig: parseProtectedSettings(value.pendingConfig),
     blockedRoots: parseBlockedRoots(value.blockedRoots),
+    lastProcessedBrowserLocalDay:
+      typeof value.lastProcessedBrowserLocalDay === "string"
+        ? value.lastProcessedBrowserLocalDay
+        : null,
     protectedSettingsChangeLock: parseProtectedSettingsChangeLock(
       value.protectedSettingsChangeLock,
     ),
@@ -225,6 +260,8 @@ export function addBlockedRoot(state: ExtensionState, input: string): BlockedRoo
       blockedRoots: {
         active: [...state.blockedRoots.active, normalizedRoot],
         pendingRemoval: [...state.blockedRoots.pendingRemoval],
+        pendingRemovalScheduledOnBrowserLocalDay:
+          state.blockedRoots.pendingRemovalScheduledOnBrowserLocalDay,
       },
     },
   };
@@ -233,6 +270,7 @@ export function addBlockedRoot(state: ExtensionState, input: string): BlockedRoo
 export function scheduleBlockedRootRemoval(
   state: ExtensionState,
   root: string,
+  now: Date = new Date(),
 ): ExtensionState | null {
   if (
     !state.blockedRoots.active.includes(root) ||
@@ -246,6 +284,7 @@ export function scheduleBlockedRootRemoval(
     blockedRoots: {
       active: [...state.blockedRoots.active],
       pendingRemoval: [...state.blockedRoots.pendingRemoval, root],
+      pendingRemovalScheduledOnBrowserLocalDay: getBrowserLocalDay(now),
     },
   };
 }
@@ -265,6 +304,10 @@ export function cancelBlockedRootRemoval(
       pendingRemoval: state.blockedRoots.pendingRemoval.filter(
         (blockedRoot) => blockedRoot !== root,
       ),
+      pendingRemovalScheduledOnBrowserLocalDay:
+        state.blockedRoots.pendingRemoval.length === 1
+          ? null
+          : state.blockedRoots.pendingRemovalScheduledOnBrowserLocalDay,
     },
   };
 }
@@ -396,12 +439,17 @@ function parseBlockedRoots(value: unknown): BlockedRootsState {
     return {
       active: [],
       pendingRemoval: [],
+      pendingRemovalScheduledOnBrowserLocalDay: null,
     };
   }
 
   return {
     active: parseStringArray(value.active),
     pendingRemoval: parseStringArray(value.pendingRemoval),
+    pendingRemovalScheduledOnBrowserLocalDay:
+      typeof value.pendingRemovalScheduledOnBrowserLocalDay === "string"
+        ? value.pendingRemovalScheduledOnBrowserLocalDay
+        : null,
   };
 }
 
@@ -472,25 +520,11 @@ function readString(value: unknown, key: string): string {
 }
 
 function parseClockTimeToMinutes(value: string): number | null {
-  const match = /^(\d{2}):(\d{2})$/u.exec(value);
+  const parsedClockTime = parseClockTime(value);
 
-  if (match === null) {
+  if (parsedClockTime === null) {
     return null;
   }
 
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-
-  if (
-    !Number.isInteger(hours) ||
-    !Number.isInteger(minutes) ||
-    hours < 0 ||
-    hours > 23 ||
-    minutes < 0 ||
-    minutes > 59
-  ) {
-    return null;
-  }
-
-  return hours * 60 + minutes;
+  return parsedClockTime.hours * 60 + parsedClockTime.minutes;
 }

@@ -171,7 +171,7 @@ Enforcement note: Issue 7's original same-tab redirect approach is not implement
    - Issue 7
 
 9. **Title**: Enforce alarms for hard-lock and day-boundary transitions
-   **Status**: pending
+   **Status**: done
    **Type**: AFK
    **Blocked by**: 5, 7
    **User stories covered**: active enforcement at 11pm, 9am, and midnight
@@ -181,10 +181,10 @@ Enforcement note: Issue 7's original same-tab redirect approach is not implement
    Schedule and handle extension alarms for hard-lock start, hard-lock end, and local midnight. These transitions should update active state, clear stale day-based allow cache when needed, activate next-day pending settings/removals, and replace already-open blocked-site tab bodies whenever the new state requires blocking.
 
    ## Acceptance criteria
-   - [ ] The extension schedules reevaluation at hard-lock start, hard-lock end, and local midnight.
-   - [ ] Local midnight activates pending protected settings and pending blocked-site removals.
-   - [ ] Local midnight resets the day-based allow cache.
-   - [ ] Already-open matching tabs are replaced with the `Block Page` when a transition causes them to become blocked.
+   - [x] The extension schedules reevaluation at hard-lock start, hard-lock end, and local midnight.
+   - [x] Local midnight activates pending protected settings and pending blocked-site removals.
+   - [x] Local midnight resets the day-based allow cache.
+   - [x] Already-open matching tabs are replaced with the `Block Page` when a transition causes them to become blocked.
 
    ## Blocked by
    - Issue 5
