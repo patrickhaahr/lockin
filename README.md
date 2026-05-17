@@ -1,5 +1,4 @@
-# LockIn
-
+<h1 align="center">LOCKIN.</h1>
 <p align="center">
   <img src="public/icon.svg" width="128" height="128" alt="LockIn Icon">
 </p>
