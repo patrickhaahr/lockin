@@ -16,6 +16,7 @@ import { requestDailySolveGateVerification } from "@/shared/verification";
 import {
   renderProtectedSettingsForm,
   renderProtectedSettingsSummary,
+  type ProtectedSettingsFormValues,
 } from "./protected-settings-form";
 import {
   createStateMutationQueue,
@@ -42,6 +43,9 @@ const SETUP_SAVE_ERROR = "Couldn't save setup. Try again.";
 const POST_SETUP_VERIFICATION_ERROR =
   "Setup was saved, but the immediate verification could not be completed. Try Check now.";
 
+let popupSettingsTab: "general" | "blocklist" = "general";
+let draftProtectedSettings: ProtectedSettingsFormValues | null = null;
+let draftBlockedRoot = "";
 let extensionState: ExtensionState = createEmptyExtensionState();
 let popupView: PopupView = "main";
 let extensionStateMutations = createStateMutationQueue(extensionState, writeExtensionState);
@@ -79,7 +83,7 @@ function bindSetupView(): void {
   const form = popupRoot.querySelector('[data-role="setup-form"]');
   const errorMessage = popupRoot.querySelector('[data-role="setup-error"]');
 
-  if (!(form instanceof HTMLFormElement) || !(errorMessage instanceof HTMLParagraphElement)) {
+  if (!(form instanceof HTMLFormElement) || !(errorMessage instanceof HTMLElement)) {
     throw new Error("Missing setup form elements.");
   }
 
@@ -89,10 +93,7 @@ function bindSetupView(): void {
   });
 }
 
-async function saveInitialSetup(
-  form: HTMLFormElement,
-  errorMessage: HTMLParagraphElement,
-): Promise<void> {
+async function saveInitialSetup(form: HTMLFormElement, errorMessage: HTMLElement): Promise<void> {
   const settingsInput = readProtectedSettingsForm(form);
 
   if (settingsInput === null) {
@@ -134,6 +135,16 @@ function bindRegularView(): void {
     void runPopupVerification();
   });
 
+  popupRoot.querySelectorAll<HTMLElement>('[data-action="switch-tab"]').forEach((btn) => {
+    btn.addEventListener("click", () => {
+      switchSettingsTab(readSettingsTab(btn.dataset.tab));
+    });
+
+    btn.addEventListener("keydown", (event) => {
+      handleSettingsTabKeydown(event);
+    });
+  });
+
   const blockedRootsForm = popupRoot.querySelector('[data-role="blocked-roots-form"]');
   const blockedRootsError = popupRoot.querySelector('[data-role="blocked-roots-error"]');
   const protectedSettingsForm = popupRoot.querySelector('[data-role="protected-settings-form"]');
@@ -141,7 +152,7 @@ function bindRegularView(): void {
 
   if (
     protectedSettingsForm instanceof HTMLFormElement &&
-    protectedSettingsError instanceof HTMLParagraphElement
+    protectedSettingsError instanceof HTMLElement
   ) {
     protectedSettingsForm.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -149,10 +160,7 @@ function bindRegularView(): void {
     });
   }
 
-  if (
-    blockedRootsForm instanceof HTMLFormElement &&
-    blockedRootsError instanceof HTMLParagraphElement
-  ) {
+  if (blockedRootsForm instanceof HTMLFormElement && blockedRootsError instanceof HTMLElement) {
     blockedRootsForm.addEventListener("submit", (event) => {
       event.preventDefault();
       void saveBlockedRoot(blockedRootsForm, blockedRootsError);
@@ -165,7 +173,7 @@ function bindRegularView(): void {
 
 async function saveProtectedSettings(
   form: HTMLFormElement,
-  errorMessage: HTMLParagraphElement,
+  errorMessage: HTMLElement,
 ): Promise<void> {
   const settingsInput = readProtectedSettingsForm(form);
 
@@ -175,6 +183,7 @@ async function saveProtectedSettings(
   }
 
   let saveResult: ReturnType<typeof savePendingProtectedSettings>;
+  draftProtectedSettings = null;
 
   try {
     saveResult = await runStateMutation((state) => {
@@ -200,16 +209,15 @@ async function saveProtectedSettings(
     return;
   }
 
+  draftProtectedSettings = null;
   errorMessage.textContent = "";
 }
 
-async function saveBlockedRoot(
-  form: HTMLFormElement,
-  errorMessage: HTMLParagraphElement,
-): Promise<void> {
+async function saveBlockedRoot(form: HTMLFormElement, errorMessage: HTMLElement): Promise<void> {
   const blockedRootInput = readFormValue(form, "blockedRoot");
 
   let result: ReturnType<typeof addBlockedRoot>;
+  draftBlockedRoot = "";
 
   try {
     result = await runStateMutation((state) => {
@@ -235,6 +243,7 @@ async function saveBlockedRoot(
     return;
   }
 
+  draftBlockedRoot = "";
   errorMessage.textContent = "";
   form.reset();
 }
@@ -288,41 +297,46 @@ function bindRootButtons(
 
 function renderSetupView(): string {
   return `
-    <main class="shell">
-      <section class="panel hero-panel">
-        <p class="eyebrow">Setup required</p>
-        <h1>LockIn</h1>
-        <p class="lede">
-          Save a tracked profile and hard lock window to switch the popup into its regular status view.
-        </p>
-      </section>
+    <div class="container">
+      <div class="top-bar">
+        <div class="brand">LockIn.</div>
+      </div>
+      
+      <div class="status-banner" data-state="setupRequired">
+        <h1>Setup</h1>
+        <p>LockIn requires initial configuration before starting.</p>
+      </div>
 
-      <form class="panel form-panel" data-role="setup-form">
-        <label class="field">
-          <span>Tracked Profile</span>
-          <input name="trackedProfile" type="text" autocomplete="off" placeholder="leetcode-username" required />
-        </label>
+      <div class="form-section grow">
+        <form data-role="setup-form" class="stack-fill">
+          
+          <div class="form-row">
+            <label class="form-label" for="setup-tracked-profile">Tracked Profile</label>
+            <input class="input-brutal" id="setup-tracked-profile" name="trackedProfile" type="text" autocomplete="off" placeholder="leetcode-username" required />
+          </div>
 
-        <div class="time-grid">
-          <label class="field">
-            <span>Hard Lock Start</span>
-            <input name="hardLockStart" type="time" value="${escapeHtml(DEFAULT_HARD_LOCK_WINDOW.start)}" required />
-          </label>
+          <div class="split-row form-row">
+            <div>
+              <label class="form-label" for="setup-hard-lock-start">Lock Start</label>
+              <input class="input-brutal" id="setup-hard-lock-start" name="hardLockStart" type="time" value="${escapeHtml(DEFAULT_HARD_LOCK_WINDOW.start)}" required />
+            </div>
+            <div>
+              <label class="form-label" for="setup-hard-lock-end">Lock End</label>
+              <input class="input-brutal" id="setup-hard-lock-end" name="hardLockEnd" type="time" value="${escapeHtml(DEFAULT_HARD_LOCK_WINDOW.end)}" required />
+            </div>
+          </div>
 
-          <label class="field">
-            <span>Hard Lock End</span>
-            <input name="hardLockEnd" type="time" value="${escapeHtml(DEFAULT_HARD_LOCK_WINDOW.end)}" required />
-          </label>
-        </div>
+          <div class="help-text">
+            Default blocked roots are applied automatically on setup.
+          </div>
+          <div class="error-msg" data-role="setup-error"></div>
 
-        <p class="detail">
-          Default blocked roots will be saved on first setup so later slices can enforce them.
-        </p>
-        <p class="error" data-role="setup-error"></p>
-
-        <button class="primary-button" type="submit">Save setup</button>
-      </form>
-    </main>
+          <div class="push-bottom">
+            <button class="btn-primary" type="submit">Save Setup</button>
+          </div>
+        </form>
+      </div>
+    </div>
   `;
 }
 
@@ -336,71 +350,63 @@ function renderMainView(state: ExtensionState): string {
   const regularViewError =
     regularViewErrorMessage === ""
       ? ""
-      : `<p class="error">${escapeHtml(regularViewErrorMessage)}</p>`;
+      : `<div class="error-msg" style="padding: 0 16px;">${escapeHtml(regularViewErrorMessage)}</div>`;
+
   const latestAcceptedSolveRow =
     popupStatus.lastAcceptedSolveValue === null
       ? ""
       : `
-          <div>
-            <dt>Latest Accepted Solve</dt>
-            <dd>${escapeHtml(popupStatus.lastAcceptedSolveValue)}</dd>
+          <div class="data-row">
+            <div class="data-label">Latest Solve</div>
+            <div class="data-value">${escapeHtml(popupStatus.lastAcceptedSolveValue)}</div>
           </div>
         `;
 
   return `
-    <main class="shell">
-      <section class="panel status-panel">
-        <div class="row">
-          <div>
-            <p class="eyebrow">Status</p>
-            <h1>${escapeHtml(popupStatus.title)}</h1>
-          </div>
-          <button class="ghost-button icon-button" type="button" data-action="open-settings" aria-label="Open settings">
-            Settings
-          </button>
+    <div class="container">
+      <div class="top-bar">
+        <div class="brand">LockIn.</div>
+        <button class="nav-btn" type="button" data-action="open-settings">Config</button>
+      </div>
+      
+      <div class="status-banner" data-state="${escapeHtml(popupStatus.kind)}">
+        <h1>${escapeHtml(popupStatus.title.toUpperCase())}</h1>
+        <p>${escapeHtml(popupStatus.summary)}</p>
+      </div>
+
+      <div class="data-grid">
+        <div class="data-row">
+          <div class="data-label">Profile</div>
+          <div class="data-value">${escapeHtml(state.currentConfig.trackedProfile)}</div>
         </div>
-
-        <p class="lede">
-          ${escapeHtml(popupStatus.summary)}
-        </p>
-
-        <div class="action-row">
-          <button
-            class="primary-button"
-            type="button"
-            data-action="check-now"
-            ${checkNowDisabled ? "disabled" : ""}
-          >
-            ${popupVerificationPromise === null ? "Check now" : "Checking..."}
-          </button>
-          <p class="detail">
-            Manual verification is debounced briefly to avoid repeated LeetCode checks.
-          </p>
+        <div class="data-row">
+          <div class="data-label">Lock Window</div>
+          <div class="data-value">${escapeHtml(formatHardLockWindow(state.currentConfig.hardLockWindow))}</div>
         </div>
+        <div class="data-row">
+          <div class="data-label">Blocked Roots</div>
+          <div class="data-value">${state.blockedRoots.active.length}</div>
+        </div>
+        <div class="data-row">
+          <div class="data-label">${escapeHtml(popupStatus.nextRelevantLabel)}</div>
+          <div class="data-value">${escapeHtml(popupStatus.nextRelevantValue)}</div>
+        </div>
+        ${latestAcceptedSolveRow}
+      </div>
 
-        ${regularViewError}
+      ${regularViewError}
 
-        <dl class="summary-list">
-          <div>
-            <dt>Tracked Profile</dt>
-            <dd>${escapeHtml(state.currentConfig.trackedProfile)}</dd>
-          </div>
-          <div>
-            <dt>Hard Lock Window</dt>
-            <dd>${escapeHtml(formatHardLockWindow(state.currentConfig.hardLockWindow))}</dd>
-          </div>
-          <div>
-            <dt>Blocked Roots</dt>
-            <dd>${state.blockedRoots.active.length}</dd>
-          </div>
-          <div>
-            <dt>${escapeHtml(popupStatus.nextRelevantLabel)}</dt>
-            <dd>${escapeHtml(popupStatus.nextRelevantValue)}</dd>
-          </div>
-          ${latestAcceptedSolveRow}
-        </dl>
-      </section>
-    </main>
+      <div class="btn-action-wrapper">
+        <button
+          class="btn-primary"
+          type="button"
+          data-action="check-now"
+          ${checkNowDisabled ? "disabled" : ""}
+        >
+          ${popupVerificationPromise === null ? "Verify Status" : "Checking..."}
+        </button>
+      </div>
+    </div>
   `;
 }
 
@@ -409,133 +415,191 @@ function renderSettingsView(state: ExtensionState): string {
     throw new Error("Settings view requires current configuration.");
   }
 
-  return `
-    <main class="shell">
-      <section class="panel">
-        <div class="row">
-          <button class="ghost-button" type="button" data-action="close-settings">Back</button>
-          <div>
-            <p class="eyebrow">Settings</p>
-            <h1>Current vs pending</h1>
-          </div>
-        </div>
-      </section>
+  const isGeneral = popupSettingsTab === "general";
+  const isBlocklist = popupSettingsTab === "blocklist";
 
-      <section class="panel">
-        <h2>Active</h2>
-        <p class="section-label">Protected Settings</p>
+  const tabContent = isGeneral
+    ? `
+      <div class="form-section grow" role="tabpanel" id="settings-panel-general" aria-labelledby="settings-tab-general">
+        <h3 class="section-title">Protected Rules</h3>
         ${renderProtectedSettingsSummary(state.currentConfig)}
-        ${renderProtectedSettingsForm(state)}
-
-        <p class="section-label">Blocked Roots</p>
-        <dl class="summary-list section-list">
-          <div>
-            <dt>Blocked Roots</dt>
-            <dd>${renderActiveBlockedRoots(state.blockedRoots.active, state.blockedRoots.pendingRemoval)}</dd>
-          </div>
-        </dl>
-
-        <form class="form-panel blocked-roots-form" data-role="blocked-roots-form">
-          <label class="field">
-            <span>Add blocked root</span>
+        ${renderPendingProtectedSettings(state)}
+        <div class="mt-24">
+          ${renderProtectedSettingsForm(state, draftProtectedSettings)}
+        </div>
+      </div>
+    `
+    : `
+      <div class="form-section grow" style="padding: 0;" role="tabpanel" id="settings-panel-blocklist" aria-labelledby="settings-tab-blocklist">
+        <div class="form-section">
+          <h3 class="section-title">Blocklist Controls</h3>
+          
+          <form class="row-inline" data-role="blocked-roots-form">
+            <label class="sr-only" for="blocked-root-input">Blocked Root</label>
             <input
+              class="input-brutal input-grow"
+              id="blocked-root-input"
               name="blockedRoot"
               type="text"
               autocomplete="off"
-              placeholder="youtube.com or https://www.youtube.com"
+              placeholder="youtube.com"
+              value="${escapeHtml(draftBlockedRoot)}"
               required
             />
-          </label>
-          <p class="detail">
-            Adds take effect immediately. Re-adding a root pending removal cancels that pending removal.
-          </p>
-          <p class="error" data-role="blocked-roots-error"></p>
-          <button class="primary-button" type="submit">Add blocked root</button>
-        </form>
-      </section>
+            <button class="btn-secondary" type="submit">ADD</button>
+          </form>
+          <div class="error-msg mb-16" data-role="blocked-roots-error"></div>
+        </div>
 
-      <section class="panel">
-        <h2>Pending</h2>
-        <p class="section-label">Protected Settings</p>
-        ${renderPendingProtectedSettings(state)}
+        <div class="list-wrapper">
+          ${renderUnifiedBlockedRoots(state.blockedRoots.active, state.blockedRoots.pendingRemoval)}
+        </div>
+      </div>
+    `;
 
-        <p class="section-label">Blocked Root Removals</p>
-        <dl class="summary-list section-list">
-          <div>
-            <dt>Blocked Root Removals</dt>
-            <dd>${renderPendingBlockedRoots(state.blockedRoots.pendingRemoval)}</dd>
-          </div>
-        </dl>
-      </section>
-    </main>
+  return `
+    <div class="container">
+      <div class="top-bar">
+        <div class="brand">Configuration</div>
+        <button class="nav-btn" type="button" data-action="close-settings">Done</button>
+      </div>
+
+      <div class="ticket-tabs" role="tablist" aria-label="Configuration sections">
+        <button class="ticket-tab ${isGeneral ? "active" : ""}" id="settings-tab-general" role="tab" aria-selected="${String(isGeneral)}" aria-controls="settings-panel-general" tabindex="0" data-action="switch-tab" data-tab="general">Rules</button>
+        <button class="ticket-tab ${isBlocklist ? "active" : ""}" id="settings-tab-blocklist" role="tab" aria-selected="${String(isBlocklist)}" aria-controls="settings-panel-blocklist" tabindex="0" data-action="switch-tab" data-tab="blocklist">Blocklist</button>
+      </div>
+
+      ${tabContent}
+    </div>
   `;
 }
 
 function renderPendingProtectedSettings(state: ExtensionState): string {
   if (state.pendingConfig === null) {
-    return '<p class="detail empty-state">No pending protected-setting changes.</p>';
+    return "";
   }
 
-  return renderProtectedSettingsSummary(state.pendingConfig);
+  return `
+    <div class="pending-box">
+      <div class="pending-box-title">Pending Next Day</div>
+      ${renderProtectedSettingsSummary(state.pendingConfig)}
+    </div>
+  `;
 }
 
-function renderActiveBlockedRoots(activeRoots: string[], pendingRemovalRoots: string[]): string {
+function renderUnifiedBlockedRoots(activeRoots: string[], pendingRemovalRoots: string[]): string {
   if (activeRoots.length === 0) {
-    return "None";
+    return '<div class="empty-msg">No domains blocked.</div>';
   }
 
   return activeRoots
     .map((rootName) => {
       const isPendingRemoval = pendingRemovalRoots.includes(rootName);
-      const removalStatus = isPendingRemoval
-        ? '<span class="list-detail">Pending removal tomorrow</span>'
-        : "";
-      const buttonLabel = isPendingRemoval ? "Removal scheduled" : "Remove tomorrow";
-      const disabledAttribute = isPendingRemoval ? "disabled" : "";
+
+      if (isPendingRemoval) {
+        return `
+          <div class="list-item">
+            <div class="list-domain pending-strike">
+              ${escapeHtml(rootName)}
+              <span class="tag-badge">Pending Tomorrow</span>
+            </div>
+            <button
+              class="btn-secondary"
+              type="button"
+              data-action="cancel-root-removal"
+              data-root="${escapeHtml(rootName)}"
+            >
+              Undo
+            </button>
+          </div>
+        `;
+      }
 
       return `
-        <span class="list-row">
-          <span>
-            <span>${escapeHtml(rootName)}</span>
-            ${removalStatus}
-          </span>
+        <div class="list-item">
+          <div class="list-domain">
+            ${escapeHtml(rootName)}
+          </div>
           <button
-            class="ghost-button list-button"
+            class="btn-secondary"
             type="button"
             data-action="schedule-root-removal"
             data-root="${escapeHtml(rootName)}"
-            ${disabledAttribute}
           >
-            ${buttonLabel}
+            Remove Tomorrow
           </button>
-        </span>
+        </div>
       `;
     })
     .join("");
 }
 
-function renderPendingBlockedRoots(roots: string[]): string {
-  if (roots.length === 0) {
-    return "None";
+function readSettingsTab(value: string | undefined): "general" | "blocklist" {
+  return value === "blocklist" ? "blocklist" : "general";
+}
+
+function syncSettingsDrafts(): void {
+  const protectedSettingsForm = popupRoot.querySelector<HTMLFormElement>(
+    '[data-role="protected-settings-form"]',
+  );
+
+  if (protectedSettingsForm instanceof HTMLFormElement) {
+    draftProtectedSettings = readProtectedSettingsDraft(protectedSettingsForm);
   }
 
-  return roots
-    .map(
-      (rootName) => `
-        <span class="list-row">
-          <span>${escapeHtml(rootName)}</span>
-          <button
-            class="ghost-button list-button"
-            type="button"
-            data-action="cancel-root-removal"
-            data-root="${escapeHtml(rootName)}"
-          >
-            Keep active
-          </button>
-        </span>
-      `,
-    )
-    .join("");
+  const blockedRootsForm = popupRoot.querySelector<HTMLFormElement>(
+    '[data-role="blocked-roots-form"]',
+  );
+
+  if (blockedRootsForm instanceof HTMLFormElement) {
+    draftBlockedRoot = readFormValue(blockedRootsForm, "blockedRoot");
+  }
+}
+
+function handleSettingsTabKeydown(event: KeyboardEvent): void {
+  const currentTab = event.currentTarget;
+
+  if (!(currentTab instanceof HTMLElement)) {
+    return;
+  }
+
+  const tabs = Array.from(popupRoot.querySelectorAll<HTMLElement>('[data-action="switch-tab"]'));
+  const currentIndex = tabs.indexOf(currentTab);
+
+  if (currentIndex === -1) {
+    return;
+  }
+
+  let nextIndex = currentIndex;
+
+  if (event.key === "ArrowRight") {
+    nextIndex = (currentIndex + 1) % tabs.length;
+  } else if (event.key === "ArrowLeft") {
+    nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+  } else if (event.key === "Home") {
+    nextIndex = 0;
+  } else if (event.key === "End") {
+    nextIndex = tabs.length - 1;
+  } else {
+    return;
+  }
+
+  event.preventDefault();
+  switchSettingsTab(readSettingsTab(tabs[nextIndex]?.dataset.tab), true);
+}
+
+function switchSettingsTab(nextTab: "general" | "blocklist", shouldFocus = false): void {
+  syncSettingsDrafts();
+  popupSettingsTab = nextTab;
+  renderPopup();
+
+  if (!shouldFocus) {
+    return;
+  }
+
+  popupRoot
+    .querySelector<HTMLElement>(`[data-action="switch-tab"][data-tab="${popupSettingsTab}"]`)
+    ?.focus();
 }
 
 function readFormValue(form: HTMLFormElement, fieldName: string): string {
@@ -543,10 +607,16 @@ function readFormValue(form: HTMLFormElement, fieldName: string): string {
   return typeof fieldValue === "string" ? fieldValue : "";
 }
 
+function readProtectedSettingsDraft(form: HTMLFormElement): ProtectedSettingsFormValues {
+  return {
+    trackedProfile: readFormValue(form, "trackedProfile").trim(),
+    hardLockStart: readFormValue(form, "hardLockStart"),
+    hardLockEnd: readFormValue(form, "hardLockEnd"),
+  };
+}
+
 function readProtectedSettingsForm(form: HTMLFormElement): ProtectedSettings | null {
-  const trackedProfile = readFormValue(form, "trackedProfile").trim();
-  const hardLockStart = readFormValue(form, "hardLockStart");
-  const hardLockEnd = readFormValue(form, "hardLockEnd");
+  const { trackedProfile, hardLockStart, hardLockEnd } = readProtectedSettingsDraft(form);
 
   if (trackedProfile === "" || hardLockStart === "" || hardLockEnd === "") {
     return null;
@@ -564,7 +634,7 @@ function readProtectedSettingsForm(form: HTMLFormElement): ProtectedSettings | n
 function setBlockedRootsError(message: string): void {
   const blockedRootsError = popupRoot.querySelector('[data-role="blocked-roots-error"]');
 
-  if (blockedRootsError instanceof HTMLParagraphElement) {
+  if (blockedRootsError instanceof HTMLElement) {
     blockedRootsError.textContent = message;
   }
 }

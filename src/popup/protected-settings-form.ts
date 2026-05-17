@@ -6,15 +6,34 @@ import {
 } from "@/shared/state";
 import type { ExtensionState, ProtectedSettings } from "@/shared/types";
 
-const PROTECTED_SETTINGS_FORM_DETAIL =
-  "Saving here stages protected-setting changes for tomorrow. Active and pending protected settings stay separate until the next browser-local day.";
+export type ProtectedSettingsFormValues = {
+  trackedProfile: string;
+  hardLockStart: string;
+  hardLockEnd: string;
+};
 
-export function renderProtectedSettingsForm(state: ExtensionState, now: Date = new Date()): string {
+const PROTECTED_SETTINGS_FORM_DETAIL = "Changes apply next browser-local day.";
+
+export function renderProtectedSettingsForm(
+  state: ExtensionState,
+  valuesOrNow: ProtectedSettingsFormValues | Date | null = null,
+  now: Date = new Date(),
+): string {
   if (state.currentConfig === null) {
     throw new Error("Protected settings form requires current configuration.");
   }
 
-  const protectedSettingsChangeAvailability = getProtectedSettingsChangeAvailability(state, now);
+  const renderedValues = valuesOrNow instanceof Date ? null : valuesOrNow;
+  const resolvedNow = valuesOrNow instanceof Date ? valuesOrNow : now;
+  const protectedSettingsChangeAvailability = getProtectedSettingsChangeAvailability(
+    state,
+    resolvedNow,
+  );
+  const values = renderedValues ?? {
+    trackedProfile: state.currentConfig.trackedProfile,
+    hardLockStart: state.currentConfig.hardLockWindow.start,
+    hardLockEnd: state.currentConfig.hardLockWindow.end,
+  };
   const protectedSettingsDisabledAttribute = protectedSettingsChangeAvailability.isLocked
     ? "disabled"
     : "";
@@ -23,64 +42,72 @@ export function renderProtectedSettingsForm(state: ExtensionState, now: Date = n
     : PROTECTED_SETTINGS_FORM_DETAIL;
 
   return `
-    <form class="form-panel protected-settings-form" data-role="protected-settings-form">
-      <label class="field">
-        <span>Tracked Profile</span>
+    <form data-role="protected-settings-form">
+      <div class="form-row">
+        <label class="form-label" for="protected-tracked-profile">Tracked Profile</label>
         <input
+          class="input-brutal"
+          id="protected-tracked-profile"
           name="trackedProfile"
           type="text"
           autocomplete="off"
-          value="${escapeHtml(state.currentConfig.trackedProfile)}"
+          value="${escapeHtml(values.trackedProfile)}"
           placeholder="leetcode-username"
           required
           ${protectedSettingsDisabledAttribute}
         />
-      </label>
-
-      <div class="time-grid">
-        <label class="field">
-          <span>Hard Lock Start</span>
-          <input
-            name="hardLockStart"
-            type="time"
-            value="${escapeHtml(state.currentConfig.hardLockWindow.start)}"
-            required
-            ${protectedSettingsDisabledAttribute}
-          />
-        </label>
-
-        <label class="field">
-          <span>Hard Lock End</span>
-          <input
-            name="hardLockEnd"
-            type="time"
-            value="${escapeHtml(state.currentConfig.hardLockWindow.end)}"
-            required
-            ${protectedSettingsDisabledAttribute}
-          />
-        </label>
       </div>
 
-      <p class="detail">
+      <div class="split-row form-row">
+        <div>
+          <label class="form-label" for="protected-hard-lock-start">Lock Start</label>
+          <input
+            class="input-brutal"
+            id="protected-hard-lock-start"
+            name="hardLockStart"
+            type="time"
+            value="${escapeHtml(values.hardLockStart)}"
+            required
+            ${protectedSettingsDisabledAttribute}
+          />
+        </div>
+        <div>
+          <label class="form-label" for="protected-hard-lock-end">Lock End</label>
+          <input
+            class="input-brutal"
+            id="protected-hard-lock-end"
+            name="hardLockEnd"
+            type="time"
+            value="${escapeHtml(values.hardLockEnd)}"
+            required
+            ${protectedSettingsDisabledAttribute}
+          />
+        </div>
+      </div>
+
+      <div class="help-text">
         ${protectedSettingsDetail}
-      </p>
-      <p class="error" data-role="protected-settings-error"></p>
-      <button class="primary-button" type="submit" ${protectedSettingsDisabledAttribute}>Save for tomorrow</button>
+      </div>
+      <div class="error-msg" data-role="protected-settings-error"></div>
+      
+      <div style="margin-top: 16px;">
+        <button class="btn-primary" type="submit" ${protectedSettingsDisabledAttribute}>Stage Settings</button>
+      </div>
     </form>
   `;
 }
 
 export function renderProtectedSettingsSummary(settings: ProtectedSettings): string {
   return `
-    <dl class="summary-list section-list">
-      <div>
-        <dt>Tracked Profile</dt>
-        <dd>${escapeHtml(settings.trackedProfile)}</dd>
+    <div class="data-grid">
+      <div class="data-row">
+        <div class="data-label">Profile</div>
+        <div class="data-value">${escapeHtml(settings.trackedProfile)}</div>
       </div>
-      <div>
-        <dt>Hard Lock Window</dt>
-        <dd>${escapeHtml(formatHardLockWindow(settings.hardLockWindow))}</dd>
+      <div class="data-row">
+        <div class="data-label">Lock Window</div>
+        <div class="data-value">${escapeHtml(formatHardLockWindow(settings.hardLockWindow))}</div>
       </div>
-    </dl>
+    </div>
   `;
 }

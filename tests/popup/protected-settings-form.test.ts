@@ -44,8 +44,6 @@ describe("protected settings form rendering", () => {
 
     expect(renderedForm).not.toContain('type="submit" disabled');
     expect(renderedForm).not.toMatch(/required\s+disabled/gu);
-    expect(renderedForm).toContain(
-      "Saving here stages protected-setting changes for tomorrow. Active and pending protected settings stay separate until the next browser-local day.",
-    );
+    expect(renderedForm).toContain("Changes apply next browser-local day.");
   });
 });
