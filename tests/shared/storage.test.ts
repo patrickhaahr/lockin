@@ -7,6 +7,22 @@ import {
 } from "../../src/shared/storage";
 import { createConfiguredState } from "../../src/shared/state";
 
+const TEST_BLOCKED_ROOT = "example.com";
+
+function createConfiguredTestState(blockedRoots: string[] = [TEST_BLOCKED_ROOT]) {
+  const state = createConfiguredState({
+    trackedProfile: "lockin-user",
+    hardLockWindow: {
+      start: "23:00",
+      end: "09:00",
+    },
+  });
+
+  state.blockedRoots.active = blockedRoots;
+
+  return state;
+}
+
 function createDeferred(): {
   promise: Promise<void>;
   resolve: () => void;
@@ -119,13 +135,7 @@ describe("state mutation queue", () => {
       },
     });
 
-    const state = createConfiguredState({
-      trackedProfile: "lockin-user",
-      hardLockWindow: {
-        start: "23:00",
-        end: "09:00",
-      },
-    });
+    const state = createConfiguredTestState();
 
     await writeExtensionState(state);
     await writeVerificationStatus({

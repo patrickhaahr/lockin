@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createConfiguredState } from "../../src/shared/state";
 
+const TEST_BLOCKED_ROOT = "example.com";
+const UNCHANGED_BLOCKED_ROOT = "keep.com";
+
 type ChromeStub = {
   alarms: {
     onAlarm: {
@@ -29,6 +32,22 @@ type StorageChangeLike = {
   oldValue?: unknown;
   newValue?: unknown;
 };
+
+function createConfiguredTestState(
+  blockedRoots: string[] = [TEST_BLOCKED_ROOT, UNCHANGED_BLOCKED_ROOT],
+) {
+  const state = createConfiguredState({
+    trackedProfile: "lockin-user",
+    hardLockWindow: {
+      start: "23:00",
+      end: "09:00",
+    },
+  });
+
+  state.blockedRoots.active = blockedRoots;
+
+  return state;
+}
 
 function getStorageChangeListener(
   chromeStub: ChromeStub,
@@ -101,13 +120,7 @@ describe("background transition handling", () => {
   });
 
   it("initializes state and schedules alarms", async () => {
-    const state = createConfiguredState({
-      trackedProfile: "lockin-user",
-      hardLockWindow: {
-        start: "23:00",
-        end: "09:00",
-      },
-    });
+    const state = createConfiguredTestState();
     ensureExtensionState.mockResolvedValue(state);
 
     const { initializeBackgroundState } = await import("../../src/background/main");
@@ -128,13 +141,7 @@ describe("background transition handling", () => {
   });
 
   it("applies the browser-local day transition at midnight and reevaluates open tabs", async () => {
-    const state = createConfiguredState({
-      trackedProfile: "lockin-user",
-      hardLockWindow: {
-        start: "23:00",
-        end: "09:00",
-      },
-    });
+    const state = createConfiguredTestState();
     state.pendingConfig = {
       trackedProfile: "next-user",
       hardLockWindow: {
@@ -143,7 +150,7 @@ describe("background transition handling", () => {
       },
     };
     state.protectedSettingsChangeLock.lastChangedOnBrowserLocalDay = "2026-05-16";
-    state.blockedRoots.pendingRemoval = ["twitter.com"];
+    state.blockedRoots.pendingRemoval = [TEST_BLOCKED_ROOT];
     state.blockedRoots.pendingRemovalScheduledOnBrowserLocalDay = "2026-05-16";
     state.verification = {
       kind: "allowedToday",
@@ -163,7 +170,7 @@ describe("background transition handling", () => {
         currentConfig: state.pendingConfig,
         pendingConfig: null,
         blockedRoots: {
-          active: ["x.com"],
+          active: [UNCHANGED_BLOCKED_ROOT],
           pendingRemoval: [],
           pendingRemovalScheduledOnBrowserLocalDay: null,
         },
@@ -188,13 +195,7 @@ describe("background transition handling", () => {
   });
 
   it("reevaluates open tabs on hard-lock boundary alarms without rewriting state", async () => {
-    const state = createConfiguredState({
-      trackedProfile: "lockin-user",
-      hardLockWindow: {
-        start: "23:00",
-        end: "09:00",
-      },
-    });
+    const state = createConfiguredTestState();
     readExtensionState.mockResolvedValue(state);
 
     const { handleTransitionAlarm } = await import("../../src/background/main");
@@ -220,13 +221,14 @@ describe("background transition handling", () => {
   });
 
   it("reconciles browser-local day state before a hard-lock alarm that fires at midnight", async () => {
-    const state = createConfiguredState({
+    const state = createConfiguredTestState();
+    state.currentConfig = {
       trackedProfile: "lockin-user",
       hardLockWindow: {
         start: "00:00",
         end: "09:00",
       },
-    });
+    };
     state.pendingConfig = {
       trackedProfile: "next-user",
       hardLockWindow: {
@@ -258,13 +260,7 @@ describe("background transition handling", () => {
   });
 
   it("applies a missed browser-local day transition during startup", async () => {
-    const state = createConfiguredState({
-      trackedProfile: "lockin-user",
-      hardLockWindow: {
-        start: "23:00",
-        end: "09:00",
-      },
-    });
+    const state = createConfiguredTestState();
     state.pendingConfig = {
       trackedProfile: "next-user",
       hardLockWindow: {
@@ -273,7 +269,7 @@ describe("background transition handling", () => {
       },
     };
     state.protectedSettingsChangeLock.lastChangedOnBrowserLocalDay = "2026-05-16";
-    state.blockedRoots.pendingRemoval = ["twitter.com"];
+    state.blockedRoots.pendingRemoval = [TEST_BLOCKED_ROOT];
     state.blockedRoots.pendingRemovalScheduledOnBrowserLocalDay = "2026-05-16";
     state.lastProcessedBrowserLocalDay = "2026-05-16";
     ensureExtensionState.mockResolvedValue(state);
@@ -287,7 +283,7 @@ describe("background transition handling", () => {
         currentConfig: state.pendingConfig,
         pendingConfig: null,
         blockedRoots: {
-          active: ["x.com"],
+          active: [UNCHANGED_BLOCKED_ROOT],
           pendingRemoval: [],
           pendingRemovalScheduledOnBrowserLocalDay: null,
         },
@@ -302,13 +298,7 @@ describe("background transition handling", () => {
   });
 
   it("reevaluates open tabs when storage adds an active blocked root", async () => {
-    const previousState = createConfiguredState({
-      trackedProfile: "lockin-user",
-      hardLockWindow: {
-        start: "23:00",
-        end: "09:00",
-      },
-    });
+    const previousState = createConfiguredTestState();
     const nextState = {
       ...previousState,
       blockedRoots: {
@@ -344,18 +334,12 @@ describe("background transition handling", () => {
   });
 
   it("does not reevaluate open tabs when blocked-root changes do not add active roots", async () => {
-    const previousState = createConfiguredState({
-      trackedProfile: "lockin-user",
-      hardLockWindow: {
-        start: "23:00",
-        end: "09:00",
-      },
-    });
+    const previousState = createConfiguredTestState();
     const nextState = {
       ...previousState,
       blockedRoots: {
         ...previousState.blockedRoots,
-        pendingRemoval: ["twitter.com"],
+        pendingRemoval: [TEST_BLOCKED_ROOT],
         pendingRemovalScheduledOnBrowserLocalDay: "2026-05-17",
       },
     };

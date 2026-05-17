@@ -25,9 +25,22 @@ const PENDING_PROTECTED_SETTINGS = {
   },
 } as const;
 
+const TEST_BLOCKED_ROOT = "example.com";
+const UNCHANGED_BLOCKED_ROOT = "keep.com";
+
+function createConfiguredBlockedRootsTestState(
+  blockedRoots: string[] = [TEST_BLOCKED_ROOT, UNCHANGED_BLOCKED_ROOT],
+) {
+  const state = createConfiguredState(ACTIVE_PROTECTED_SETTINGS);
+
+  state.blockedRoots.active = blockedRoots;
+
+  return state;
+}
+
 describe("browser-local day transition", () => {
   it("activates pending config, removes pending blocked roots, and clears the allow cache", () => {
-    const initialState = createConfiguredState(ACTIVE_PROTECTED_SETTINGS);
+    const initialState = createConfiguredBlockedRootsTestState();
     const pendingProtectedSettingsResult = savePendingProtectedSettings(
       initialState,
       PENDING_PROTECTED_SETTINGS,
@@ -41,7 +54,7 @@ describe("browser-local day transition", () => {
 
     const withPendingRemoval = scheduleBlockedRootRemoval(
       pendingProtectedSettingsResult.state,
-      "twitter.com",
+      TEST_BLOCKED_ROOT,
       new Date("2026-05-16T12:00:00"),
     );
 
@@ -63,7 +76,7 @@ describe("browser-local day transition", () => {
       currentConfig: PENDING_PROTECTED_SETTINGS,
       pendingConfig: null,
       blockedRoots: {
-        active: ["x.com"],
+        active: [UNCHANGED_BLOCKED_ROOT],
         pendingRemoval: [],
         pendingRemovalScheduledOnBrowserLocalDay: null,
       },
@@ -91,10 +104,10 @@ describe("browser-local day transition", () => {
   });
 
   it("does not activate same-day pending blocked-root removals during upgrade bookkeeping", () => {
-    const state = createConfiguredState(ACTIVE_PROTECTED_SETTINGS);
+    const state = createConfiguredBlockedRootsTestState();
     const withPendingRemoval = scheduleBlockedRootRemoval(
       state,
-      "twitter.com",
+      TEST_BLOCKED_ROOT,
       new Date("2026-05-16T12:00:00"),
     );
 
@@ -116,8 +129,11 @@ describe("browser-local day transition", () => {
   });
 
   it("does not activate legacy pending blocked-root removals without schedule metadata", () => {
-    const state = createConfiguredState(ACTIVE_PROTECTED_SETTINGS);
-    state.blockedRoots.pendingRemoval = ["twitter.com"];
+    const state = createConfiguredBlockedRootsTestState([
+      TEST_BLOCKED_ROOT,
+      UNCHANGED_BLOCKED_ROOT,
+    ]);
+    state.blockedRoots.pendingRemoval = [TEST_BLOCKED_ROOT];
 
     expect(synchronizeBrowserLocalDayState(state, new Date("2026-05-16T18:00:00"))).toEqual({
       didChange: true,
@@ -130,7 +146,7 @@ describe("browser-local day transition", () => {
   });
 
   it("does not activate same-day pending protected settings during upgrade bookkeeping", () => {
-    const state = createConfiguredState(ACTIVE_PROTECTED_SETTINGS);
+    const state = createConfiguredBlockedRootsTestState();
     const pendingProtectedSettingsResult = savePendingProtectedSettings(
       state,
       PENDING_PROTECTED_SETTINGS,
@@ -158,7 +174,7 @@ describe("browser-local day transition", () => {
   });
 
   it("clears a stale allow cache without activating same-day pending changes on upgrade", () => {
-    const state = createConfiguredState(ACTIVE_PROTECTED_SETTINGS);
+    const state = createConfiguredBlockedRootsTestState();
     const pendingProtectedSettingsResult = savePendingProtectedSettings(
       state,
       PENDING_PROTECTED_SETTINGS,
@@ -172,7 +188,7 @@ describe("browser-local day transition", () => {
 
     const withPendingRemoval = scheduleBlockedRootRemoval(
       pendingProtectedSettingsResult.state,
-      "twitter.com",
+      TEST_BLOCKED_ROOT,
       new Date("2026-05-16T12:30:00"),
     );
 

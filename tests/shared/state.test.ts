@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   addBlockedRoot,
-  DEFAULT_BLOCKED_ROOTS,
   createConfiguredState,
   createEmptyExtensionState,
   formatHardLockWindow,
@@ -31,8 +30,19 @@ const PENDING_PROTECTED_SETTINGS = {
   },
 } as const;
 
+const TEST_BLOCKED_ROOT = "example.com";
+const UNCHANGED_BLOCKED_ROOT = "keep.com";
+
 function createConfiguredTestState() {
   return createConfiguredState(ACTIVE_PROTECTED_SETTINGS);
+}
+
+function createConfiguredBlockedRootsTestState(blockedRoots: string[] = [TEST_BLOCKED_ROOT]) {
+  const state = createConfiguredState(ACTIVE_PROTECTED_SETTINGS);
+
+  state.blockedRoots.active = blockedRoots;
+
+  return state;
 }
 
 function expectUpdatedProtectedSettingsState(
@@ -58,7 +68,7 @@ describe("shared extension state", () => {
     const state = createConfiguredTestState();
 
     expect(isSetupRequired(state)).toBe(false);
-    expect(state.blockedRoots.active).toEqual([...DEFAULT_BLOCKED_ROOTS]);
+    expect(state.blockedRoots.active).toEqual(["x.com"]);
     expect(state.pendingConfig).toBeNull();
     expect(state.blockedRoots.pendingRemovalScheduledOnBrowserLocalDay).toBeNull();
     expect(state.lastProcessedBrowserLocalDay).toBeNull();
@@ -146,18 +156,18 @@ describe("shared extension state", () => {
   });
 
   it("matches blocked roots against subdomains of active roots", () => {
-    const state = createConfiguredTestState();
+    const state = createConfiguredBlockedRootsTestState();
 
-    expect(getActiveBlockedRootForHostname(state.blockedRoots, "mobile.twitter.com")).toBe(
-      "twitter.com",
+    expect(getActiveBlockedRootForHostname(state.blockedRoots, "mobile.twitter.com")).toBeNull();
+    expect(getActiveBlockedRootForHostname(state.blockedRoots, "api.example.com")).toBe(
+      TEST_BLOCKED_ROOT,
     );
-    expect(getActiveBlockedRootForHostname(state.blockedRoots, "api.x.com")).toBe("x.com");
     expect(getActiveBlockedRootForHostname(state.blockedRoots, "leetcode.com")).toBeNull();
   });
 
   it("adds a normalized blocked root immediately", () => {
     const result = addBlockedRoot(
-      createConfiguredTestState(),
+      createConfiguredBlockedRootsTestState(),
       "https://www.youtube.com/watch?v=test",
     );
 
@@ -166,37 +176,40 @@ describe("shared extension state", () => {
       throw new Error("Expected blocked root add to succeed.");
     }
 
-    expect(result.state.blockedRoots.active).toEqual(["twitter.com", "x.com", "youtube.com"]);
+    expect(result.state.blockedRoots.active).toEqual([TEST_BLOCKED_ROOT, "youtube.com"]);
     expect(result.state.blockedRoots.pendingRemoval).toEqual([]);
   });
 
   it("rejects redundant blocked roots across active and pending state", () => {
-    const state = createConfiguredTestState();
+    const state = createConfiguredBlockedRootsTestState([
+      TEST_BLOCKED_ROOT,
+      UNCHANGED_BLOCKED_ROOT,
+    ]);
     const pendingRemovalState = scheduleBlockedRootRemoval(
       state,
-      "twitter.com",
+      TEST_BLOCKED_ROOT,
       new Date("2026-05-16T12:00:00"),
     );
 
-    expect(addBlockedRoot(state, "mobile.twitter.com").kind).toBe("duplicate");
+    expect(addBlockedRoot(state, "mobile.example.com").kind).toBe("duplicate");
     expect(pendingRemovalState).not.toBeNull();
     if (pendingRemovalState === null) {
       throw new Error("Expected blocked root removal scheduling to succeed.");
     }
 
-    expect(addBlockedRoot(pendingRemovalState, "https://x.com/home").kind).toBe("duplicate");
+    expect(addBlockedRoot(pendingRemovalState, "https://example.com/home").kind).toBe("updated");
   });
 
   it("schedules blocked root removals for the next day", () => {
     const nextState = scheduleBlockedRootRemoval(
-      createConfiguredTestState(),
-      "twitter.com",
+      createConfiguredBlockedRootsTestState([TEST_BLOCKED_ROOT, UNCHANGED_BLOCKED_ROOT]),
+      TEST_BLOCKED_ROOT,
       new Date("2026-05-16T12:00:00"),
     );
 
     expect(nextState).not.toBeNull();
-    expect(nextState?.blockedRoots.active).toEqual(["twitter.com", "x.com"]);
-    expect(nextState?.blockedRoots.pendingRemoval).toEqual(["twitter.com"]);
+    expect(nextState?.blockedRoots.active).toEqual([TEST_BLOCKED_ROOT, UNCHANGED_BLOCKED_ROOT]);
+    expect(nextState?.blockedRoots.pendingRemoval).toEqual([TEST_BLOCKED_ROOT]);
     expect(nextState?.blockedRoots.pendingRemovalScheduledOnBrowserLocalDay).toBe("2026-05-16");
   });
 
@@ -349,10 +362,13 @@ describe("shared extension state", () => {
   });
 
   it("cancels a pending blocked root removal when the root is re-added", () => {
-    const state = createConfiguredTestState();
+    const state = createConfiguredBlockedRootsTestState([
+      TEST_BLOCKED_ROOT,
+      UNCHANGED_BLOCKED_ROOT,
+    ]);
     const pendingRemovalState = scheduleBlockedRootRemoval(
       state,
-      "twitter.com",
+      TEST_BLOCKED_ROOT,
       new Date("2026-05-16T12:00:00"),
     );
 
@@ -361,14 +377,14 @@ describe("shared extension state", () => {
       throw new Error("Expected blocked root removal scheduling to succeed.");
     }
 
-    const result = addBlockedRoot(pendingRemovalState, "https://mobile.twitter.com/home");
+    const result = addBlockedRoot(pendingRemovalState, "https://mobile.example.com/home");
 
     expect(result.kind).toBe("updated");
     if (result.kind !== "updated") {
       throw new Error("Expected re-adding a pending removal root to succeed.");
     }
 
-    expect(result.state.blockedRoots.active).toEqual(["twitter.com", "x.com"]);
+    expect(result.state.blockedRoots.active).toEqual([TEST_BLOCKED_ROOT, UNCHANGED_BLOCKED_ROOT]);
     expect(result.state.blockedRoots.pendingRemoval).toEqual([]);
     expect(result.state.blockedRoots.pendingRemovalScheduledOnBrowserLocalDay).toBeNull();
   });

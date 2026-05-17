@@ -26,7 +26,7 @@ export type ProtectedSettingsChangeAvailability = {
 export const PROTECTED_SETTINGS_LOCKED_MESSAGE_PREFIX =
   "Protected settings already changed today. Next change available on ";
 
-export const DEFAULT_BLOCKED_ROOTS = ["twitter.com", "x.com"] as const;
+export const DEFAULT_BLOCKED_ROOTS = ["x.com"] as const;
 
 export const DEFAULT_HARD_LOCK_WINDOW: HardLockWindow = {
   start: "23:00",

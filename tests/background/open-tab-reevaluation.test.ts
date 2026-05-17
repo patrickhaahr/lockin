@@ -9,19 +9,29 @@ type TabLike = {
   url?: string;
 };
 
+const TEST_BLOCKED_ROOT = "example.com";
+
+function createConfiguredTestState(blockedRoots: string[] = [TEST_BLOCKED_ROOT]) {
+  const state = createConfiguredState({
+    trackedProfile: "lockin-user",
+    hardLockWindow: {
+      start: "23:00",
+      end: "09:00",
+    },
+  });
+
+  state.blockedRoots.active = blockedRoots;
+
+  return state;
+}
+
 describe("open-tab reevaluation", () => {
   it("broadcasts reevaluation to http and https tabs and ignores tabs without ids", async () => {
-    const state = createConfiguredState({
-      trackedProfile: "lockin-user",
-      hardLockWindow: {
-        start: "23:00",
-        end: "09:00",
-      },
-    });
+    const state = createConfiguredTestState([TEST_BLOCKED_ROOT, "twitter.com"]);
     const query = vi
       .fn<() => Promise<TabLike[]>>()
       .mockResolvedValue([
-        { id: 1, url: "https://x.com/home" },
+        { id: 1, url: "https://example.com/home" },
         { id: 2, url: "https://twitter.com/home" },
         { url: "https://leetcode.com/problemset/" },
       ]);
@@ -51,25 +61,12 @@ describe("open-tab reevaluation", () => {
   });
 
   it("reloads tabs removed from blocked roots when a reevaluation message cannot be delivered", async () => {
-    const previousState = createConfiguredState({
-      trackedProfile: "lockin-user",
-      hardLockWindow: {
-        start: "23:00",
-        end: "09:00",
-      },
-    });
-    const nextState = createConfiguredState({
-      trackedProfile: "lockin-user",
-      hardLockWindow: {
-        start: "23:00",
-        end: "09:00",
-      },
-    });
-    nextState.blockedRoots.active = ["x.com"];
+    const previousState = createConfiguredTestState([TEST_BLOCKED_ROOT, "linkedin.com"]);
+    const nextState = createConfiguredTestState();
 
     const query = vi
       .fn<() => Promise<TabLike[]>>()
-      .mockResolvedValue([{ id: 1, url: "https://twitter.com/home" }]);
+      .mockResolvedValue([{ id: 1, url: "https://www.linkedin.com/feed/" }]);
     const sendMessage = vi
       .fn<(tabId: number, message: unknown) => Promise<void>>()
       .mockRejectedValue(new Error("receiving end does not exist"));
@@ -85,20 +82,8 @@ describe("open-tab reevaluation", () => {
   });
 
   it("reloads tabs for newly added blocked roots when access should now be blocked", async () => {
-    const previousState = createConfiguredState({
-      trackedProfile: "lockin-user",
-      hardLockWindow: {
-        start: "23:00",
-        end: "09:00",
-      },
-    });
-    const nextState = createConfiguredState({
-      trackedProfile: "lockin-user",
-      hardLockWindow: {
-        start: "23:00",
-        end: "09:00",
-      },
-    });
+    const previousState = createConfiguredTestState();
+    const nextState = createConfiguredTestState();
     nextState.blockedRoots.active = [...nextState.blockedRoots.active, "linkedin.com"];
 
     const query = vi
@@ -125,20 +110,8 @@ describe("open-tab reevaluation", () => {
   });
 
   it("leaves newly added blocked-root tabs untouched when access is currently allowed", async () => {
-    const previousState = createConfiguredState({
-      trackedProfile: "lockin-user",
-      hardLockWindow: {
-        start: "23:00",
-        end: "09:00",
-      },
-    });
-    const nextState = createConfiguredState({
-      trackedProfile: "lockin-user",
-      hardLockWindow: {
-        start: "23:00",
-        end: "09:00",
-      },
-    });
+    const previousState = createConfiguredTestState();
+    const nextState = createConfiguredTestState();
     const allowedAt = new Date(2026, 4, 15, 18, 0, 0, 0);
 
     nextState.blockedRoots.active = [...nextState.blockedRoots.active, "linkedin.com"];
@@ -173,13 +146,7 @@ describe("open-tab reevaluation", () => {
   });
 
   it("preserves generic reevaluation reloads when blocked-root tabs become allowed", async () => {
-    const state = createConfiguredState({
-      trackedProfile: "lockin-user",
-      hardLockWindow: {
-        start: "23:00",
-        end: "09:00",
-      },
-    });
+    const state = createConfiguredTestState();
     const allowedAt = new Date(2026, 4, 15, 18, 0, 0, 0);
 
     state.verification = {
@@ -191,7 +158,7 @@ describe("open-tab reevaluation", () => {
 
     const query = vi
       .fn<() => Promise<TabLike[]>>()
-      .mockResolvedValue([{ id: 1, url: "https://x.com/home" }]);
+      .mockResolvedValue([{ id: 1, url: "https://example.com/home" }]);
     const sendMessage = vi
       .fn<(tabId: number, message: unknown) => Promise<void>>()
       .mockRejectedValue(new Error("receiving end does not exist"));

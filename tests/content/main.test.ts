@@ -16,8 +16,14 @@ const ACTIVE_PROTECTED_SETTINGS = {
   },
 } as const;
 
-function createConfiguredTestState() {
-  return createConfiguredState(ACTIVE_PROTECTED_SETTINGS);
+const TEST_BLOCKED_ROOT = "example.com";
+
+function createConfiguredTestState(blockedRoots: string[] = [TEST_BLOCKED_ROOT]) {
+  const state = createConfiguredState(ACTIVE_PROTECTED_SETTINGS);
+
+  state.blockedRoots.active = blockedRoots;
+
+  return state;
 }
 
 function createLocalDate(
@@ -152,14 +158,14 @@ describe("content blocked-site enforcement", () => {
     expect(
       resolveBlockedSiteLoadAction(
         createConfiguredTestState(),
-        "https://mobile.twitter.com/home?ref=lockin#top",
+        "https://mobile.example.com/home?ref=lockin#top",
         createLocalDate(2026, 4, 16, 7, 30),
       ),
     ).toEqual({
       kind: "block",
-      blockedRoot: "twitter.com",
+      blockedRoot: TEST_BLOCKED_ROOT,
       blockedReason: "blockedByHardLock",
-      originalDestination: "https://mobile.twitter.com/home?ref=lockin#top",
+      originalDestination: "https://mobile.example.com/home?ref=lockin#top",
     });
   });
 
@@ -181,7 +187,11 @@ describe("content blocked-site enforcement", () => {
     };
 
     expect(
-      resolveBlockedSiteLoadAction(state, "https://x.com/home", new Date("2026-05-15T18:00:00")),
+      resolveBlockedSiteLoadAction(
+        state,
+        "https://example.com/home",
+        new Date("2026-05-15T18:00:00"),
+      ),
     ).toEqual({
       kind: "allow",
     });
@@ -191,14 +201,14 @@ describe("content blocked-site enforcement", () => {
     expect(
       resolveBlockedSiteLoadAction(
         createConfiguredTestState(),
-        "https://x.com/home",
+        "https://example.com/home",
         new Date("2026-05-15T18:00:00"),
       ),
     ).toEqual({
       kind: "block",
-      blockedRoot: "x.com",
+      blockedRoot: TEST_BLOCKED_ROOT,
       blockedReason: "blockedByDailySolveGate",
-      originalDestination: "https://x.com/home",
+      originalDestination: "https://example.com/home",
     });
   });
 
@@ -211,7 +221,7 @@ describe("content blocked-site enforcement", () => {
     try {
       await enforceBlockedSiteForCurrentLocation({
         documentRef: fakeDocument as unknown as Document,
-        locationHref: "https://mobile.twitter.com/home",
+        locationHref: "https://mobile.example.com/home",
         now: () => createLocalDate(2026, 4, 16, 7, 30),
         readState: async () => state,
         requestVerification: async () => ({
@@ -254,7 +264,7 @@ describe("content blocked-site enforcement", () => {
     try {
       await enforceBlockedSiteForCurrentLocation({
         documentRef: fakeDocument as unknown as Document,
-        locationHref: "https://x.com/home",
+        locationHref: "https://example.com/home",
         now: () => createLocalDate(2026, 4, 16, 8, 59),
         readState: async () => hardLockState,
         requestVerification: async () => ({
@@ -266,7 +276,7 @@ describe("content blocked-site enforcement", () => {
 
       await enforceBlockedSiteForCurrentLocation({
         documentRef: fakeDocument as unknown as Document,
-        locationHref: "https://x.com/home",
+        locationHref: "https://example.com/home",
         now: () => createLocalDate(2026, 4, 16, 9, 1),
         readState: async () => dailySolveGateState,
         requestVerification: async () => ({
@@ -303,7 +313,7 @@ describe("content blocked-site enforcement", () => {
     try {
       await enforceBlockedSiteForCurrentLocation({
         documentRef: fakeDocument as unknown as Document,
-        locationHref: "https://x.com/home",
+        locationHref: "https://example.com/home",
         now: () => createLocalDate(2026, 4, 16, 8, 59),
         readState: async () => blockedState,
         requestVerification: async () => ({
@@ -317,7 +327,7 @@ describe("content blocked-site enforcement", () => {
 
       await enforceBlockedSiteForCurrentLocation({
         documentRef: fakeDocument as unknown as Document,
-        locationHref: "https://x.com/home",
+        locationHref: "https://example.com/home",
         now: () => createLocalDate(2026, 4, 16, 10, 1),
         readState: async () => allowedState,
         requestVerification: async () => ({
@@ -332,14 +342,14 @@ describe("content blocked-site enforcement", () => {
       restoreGlobals();
     }
 
-    expect(locationReplace).toHaveBeenCalledWith("https://x.com/home");
+    expect(locationReplace).toHaveBeenCalledWith("https://example.com/home");
   });
 
   it("renders a reason-aware block page with the original destination and latest solve details", async () => {
     const restoreGlobals = useFakeDomGlobals();
     const fakeDocument = new FakeDocument();
     let stopCalls = 0;
-    const state = createConfiguredTestState();
+    const state = createConfiguredTestState(["twitter.com"]);
     state.verification = {
       kind: "blockedByHardLock",
       checkedAt: createLocalDate(2026, 4, 16, 7, 30).toISOString(),
@@ -431,8 +441,8 @@ describe("content blocked-site enforcement", () => {
 
     try {
       await replacePageWithBlockPage(
-        "https://x.com/home",
-        "x.com",
+        "https://example.com/home",
+        TEST_BLOCKED_ROOT,
         "blockedByDailySolveGate",
         fakeDocument as unknown as Document,
         createTestWindow({ location: { replace: locationReplace } }),
@@ -450,7 +460,7 @@ describe("content blocked-site enforcement", () => {
     }
 
     expect(requestVerification).toHaveBeenCalledTimes(1);
-    expect(locationReplace).toHaveBeenCalledWith("https://x.com/home");
+    expect(locationReplace).toHaveBeenCalledWith("https://example.com/home");
   });
 
   it("disables Check again while a manual verification is in flight", async () => {
@@ -481,8 +491,8 @@ describe("content blocked-site enforcement", () => {
 
     try {
       await replacePageWithBlockPage(
-        "https://x.com/home",
-        "x.com",
+        "https://example.com/home",
+        TEST_BLOCKED_ROOT,
         "blockedByDailySolveGate",
         fakeDocument as unknown as Document,
         createTestWindow(),
@@ -544,8 +554,8 @@ describe("content blocked-site enforcement", () => {
 
     try {
       await replacePageWithBlockPage(
-        "https://x.com/home",
-        "x.com",
+        "https://example.com/home",
+        TEST_BLOCKED_ROOT,
         "blockedByDailySolveGate",
         fakeDocument as unknown as Document,
         createTestWindow(),
@@ -597,8 +607,8 @@ describe("content blocked-site enforcement", () => {
 
     try {
       await replacePageWithBlockPage(
-        "https://x.com/home",
-        "x.com",
+        "https://example.com/home",
+        TEST_BLOCKED_ROOT,
         "blockedByDailySolveGate",
         fakeDocument as unknown as Document,
         createTestWindow(),
@@ -647,8 +657,8 @@ describe("content blocked-site enforcement", () => {
 
     try {
       await replacePageWithBlockPage(
-        "https://x.com/home",
-        "x.com",
+        "https://example.com/home",
+        TEST_BLOCKED_ROOT,
         "blockedByHardLock",
         fakeDocument as unknown as Document,
         createTestWindow(),
