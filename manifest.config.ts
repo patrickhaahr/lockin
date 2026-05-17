@@ -7,7 +7,8 @@ export default defineManifest({
   version: pkg.version,
   description: "Block configured distracting sites until the daily solve gate is satisfied.",
   icons: {
-    48: "public/logo.png",
+    48: "public/icon-48.png",
+    128: "public/icon-128.png",
   },
   background: {
     service_worker: "src/background/main.ts",
@@ -15,7 +16,8 @@ export default defineManifest({
   },
   action: {
     default_icon: {
-      48: "public/logo.png",
+      48: "public/icon-48.png",
+      128: "public/icon-128.png",
     },
     default_popup: "src/popup/index.html",
   },
@@ -26,11 +28,8 @@ export default defineManifest({
       run_at: "document_start",
     },
   ],
-  permissions: ["alarms", "storage", "sidePanel", "tabs"],
+  permissions: ["alarms", "storage", "tabs"],
   host_permissions: ["https://leetcode.com/*"],
-  side_panel: {
-    default_path: "src/sidepanel/index.html",
-  },
   web_accessible_resources: [
     {
       resources: ["src/block/index.html"],
