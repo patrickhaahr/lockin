@@ -1,4 +1,5 @@
 import { getBrowserLocalDay, isSetupRequired, isWithinHardLockWindow } from "./state";
+import { readExtensionState, writeVerificationStatus } from "./storage";
 import type { ExtensionState, VerificationStateKind, VerificationStatus } from "./types";
 
 const LEETCODE_GRAPHQL_URL = "https://leetcode.com/graphql/";
@@ -54,6 +55,12 @@ export type VerifyDailySolveGateResponse = {
   usedCache: boolean;
 };
 
+export type DailySolveGateVerificationRequestOptions = DailySolveGateVerificationOptions & {
+  readState?: () => Promise<ExtensionState>;
+  sendMessage?: (message: VerifyDailySolveGateRequest) => Promise<VerifyDailySolveGateResponse>;
+  writeVerification?: (verification: VerificationStatus) => Promise<void>;
+};
+
 export type BlockedSiteBlockReason =
   | "setupRequired"
   | "blockedByHardLock"
@@ -68,10 +75,37 @@ export type BlockedSiteVerificationDecision =
       reason: BlockedSiteBlockReason;
     };
 
-export async function requestDailySolveGateVerification(): Promise<VerifyDailySolveGateResponse> {
-  return chrome.runtime.sendMessage({
+export async function requestDailySolveGateVerification(
+  options: DailySolveGateVerificationRequestOptions = {},
+): Promise<VerifyDailySolveGateResponse> {
+  const request = {
     type: VERIFY_DAILY_SOLVE_GATE_MESSAGE_TYPE,
-  } satisfies VerifyDailySolveGateRequest) as Promise<VerifyDailySolveGateResponse>;
+  } satisfies VerifyDailySolveGateRequest;
+  const readState = options.readState ?? readExtensionState;
+  const writeVerification = options.writeVerification ?? writeVerificationStatus;
+
+  try {
+    const response =
+      options.sendMessage !== undefined
+        ? await options.sendMessage(request)
+        : ((await chrome.runtime.sendMessage(request)) as VerifyDailySolveGateResponse);
+
+    if (response.verification.kind !== "verificationFailed") {
+      return response;
+    }
+  } catch {
+    // If the background path is unavailable, retry directly from the extension page.
+  }
+
+  const verificationResult = await runDailySolveGateVerification(await readState(), options);
+  const verification = verificationResult.nextState.verification;
+
+  await writeVerification(verification);
+
+  return {
+    verification,
+    usedCache: verificationResult.usedCache,
+  };
 }
 
 export async function runDailySolveGateVerification(
@@ -189,18 +223,20 @@ async function fetchAcceptedSolveResult(
   trackedProfile: string,
   fetchImpl: FetchLike,
 ): Promise<AcceptedSolveFetchResult> {
-  const response = await fetchImpl(LEETCODE_GRAPHQL_URL, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      query: VERIFY_DAILY_SOLVE_GATE_QUERY,
-      variables: {
-        username: trackedProfile,
-        limit: ACCEPTED_SUBMISSIONS_LIMIT,
-      },
+  const requestUrl = new URL(LEETCODE_GRAPHQL_URL);
+
+  // LeetCode rejects extension POST requests here with CSRF protection, so this
+  // verification query has to stay on GET even though it places the Tracked Profile in the URL.
+  requestUrl.search = new URLSearchParams({
+    query: VERIFY_DAILY_SOLVE_GATE_QUERY,
+    variables: JSON.stringify({
+      username: trackedProfile,
+      limit: ACCEPTED_SUBMISSIONS_LIMIT,
     }),
+  }).toString();
+
+  const response = await fetchImpl(requestUrl.toString(), {
+    method: "GET",
   });
 
   if (!response.ok) {
