@@ -1,8 +1,14 @@
 import { createBlockPageViewModel, mountBlockPage } from "@/block/view";
+import { MANUAL_VERIFICATION_DEBOUNCE_MS } from "@/shared/constants";
 import { readExtensionState } from "@/shared/storage";
 import { getActiveBlockedRootForHostname } from "@/shared/state";
 import type { ExtensionState } from "@/shared/types";
-import { getBlockedSiteVerificationDecision } from "@/shared/verification";
+import {
+  type BlockedSiteBlockReason,
+  getBlockedSiteVerificationDecision,
+  requestDailySolveGateVerification,
+  type VerifyDailySolveGateResponse,
+} from "@/shared/verification";
 
 export type BlockedSiteLoadAction =
   | {
@@ -11,8 +17,31 @@ export type BlockedSiteLoadAction =
   | {
       kind: "block";
       blockedRoot: string;
+      blockedReason: BlockedSiteBlockReason;
       originalDestination: string;
     };
+
+type ReplaceLocation = {
+  replace: (url: string) => void;
+};
+
+type ReplacePageWindow = {
+  location: ReplaceLocation;
+  stop: () => void;
+};
+
+type ScheduleTimeout = (handler: () => void, delayMs: number) => number;
+
+function scheduleTimeoutWithGlobal(handler: () => void, delayMs: number): number {
+  return globalThis.setTimeout(handler, delayMs);
+}
+
+export type BlockPageDependencies = {
+  now?: () => Date;
+  readState?: () => Promise<ExtensionState>;
+  requestVerification?: () => Promise<VerifyDailySolveGateResponse>;
+  scheduleTimeout?: ScheduleTimeout;
+};
 
 async function runContentScript(): Promise<void> {
   const state = await readExtensionState();
@@ -22,7 +51,11 @@ async function runContentScript(): Promise<void> {
     return;
   }
 
-  replacePageWithBlockPage(action.originalDestination, action.blockedRoot);
+  await replacePageWithBlockPage(
+    action.originalDestination,
+    action.blockedRoot,
+    action.blockedReason,
+  );
 }
 
 export function resolveBlockedSiteLoadAction(
@@ -44,6 +77,7 @@ export function resolveBlockedSiteLoadAction(
     return {
       kind: "block",
       blockedRoot,
+      blockedReason: decision.reason,
       originalDestination: locationHref,
     };
   }
@@ -56,11 +90,13 @@ export function resolveBlockedSiteLoadAction(
 export function replacePageWithBlockPage(
   originalDestination: string,
   blockedRoot: string,
+  blockedReason: BlockedSiteBlockReason,
   documentRef: Document = document,
-  windowRef: Pick<Window, "stop"> = window,
-): void {
+  windowRef: ReplacePageWindow = window,
+  dependencies: BlockPageDependencies = {},
+): Promise<void> {
   if (documentRef.documentElement.dataset.lockInBlocked === "true") {
-    return;
+    return Promise.resolve();
   }
 
   windowRef.stop();
@@ -84,7 +120,11 @@ export function replacePageWithBlockPage(
   htmlElement.replaceChildren(head, body);
 
   const shadowRoot = host.attachShadow({ mode: "open" });
-  mountBlockPage(shadowRoot, createBlockPageViewModel(originalDestination));
+  return renderBlockPage(shadowRoot, originalDestination, blockedReason, {
+    autoVerify: true,
+    dependencies,
+    windowRef: windowRef.location,
+  });
 }
 
 function getBlockedRootForLocation(state: ExtensionState, locationHref: string): string | null {
@@ -92,6 +132,128 @@ function getBlockedRootForLocation(state: ExtensionState, locationHref: string):
     return getActiveBlockedRootForHostname(state.blockedRoots, new URL(locationHref).hostname);
   } catch {
     return null;
+  }
+}
+
+type BlockPageRenderOptions = {
+  autoVerify: boolean;
+  dependencies: BlockPageDependencies;
+  windowRef: ReplaceLocation;
+};
+
+async function renderBlockPage(
+  target: ShadowRoot,
+  originalDestination: string,
+  blockedReason: BlockedSiteBlockReason,
+  options: BlockPageRenderOptions,
+): Promise<void> {
+  const readState = options.dependencies.readState ?? readExtensionState;
+  const requestVerification =
+    options.dependencies.requestVerification ?? requestDailySolveGateVerification;
+  const now = options.dependencies.now ?? (() => new Date());
+  const scheduleTimeout = options.dependencies.scheduleTimeout ?? scheduleTimeoutWithGlobal;
+  const state = await readState();
+  let cooldownUntil = 0;
+  let isChecking = false;
+
+  const render = (currentState: ExtensionState, reason: typeof blockedReason): void => {
+    const isCooldownActive = now().getTime() < cooldownUntil;
+    const isCheckAgainDisabled = isChecking || isCooldownActive;
+    const onCheckAgain = isCheckAgainDisabled
+      ? undefined
+      : () => {
+          void verifyAndMaybeRestore();
+        };
+
+    mountBlockPage(
+      target,
+      createBlockPageViewModel(
+        currentState,
+        reason,
+        originalDestination,
+        now(),
+        isChecking,
+        isCheckAgainDisabled,
+      ),
+      { onCheckAgain },
+    );
+  };
+
+  const verifyAndMaybeRestore = async (): Promise<void> => {
+    if (isChecking) {
+      return;
+    }
+
+    isChecking = true;
+    render(await readState(), blockedReason);
+
+    try {
+      const verificationResponse = await requestVerification();
+      const latestState = await readState();
+      const decision = getBlockedSiteVerificationDecision(latestState, now());
+
+      if (decision.kind === "allow") {
+        isChecking = false;
+        cooldownUntil = now().getTime() + MANUAL_VERIFICATION_DEBOUNCE_MS;
+        options.windowRef.replace(originalDestination);
+        return;
+      }
+
+      const nextBlockedReason =
+        verificationResponse.verification.kind === "setupRequired"
+          ? "setupRequired"
+          : decision.reason;
+
+      isChecking = false;
+      cooldownUntil = now().getTime() + MANUAL_VERIFICATION_DEBOUNCE_MS;
+      scheduleCooldownRerender(latestState, nextBlockedReason);
+
+      render(latestState, nextBlockedReason);
+    } catch {
+      isChecking = false;
+      cooldownUntil = now().getTime() + MANUAL_VERIFICATION_DEBOUNCE_MS;
+
+      const latestState = await readState();
+      const failureState: ExtensionState = {
+        ...latestState,
+        verification: {
+          ...latestState.verification,
+          allowCacheBrowserLocalDay: null,
+          checkedAt: now().toISOString(),
+          kind: "verificationFailed",
+        },
+      };
+      const failureDecision = getBlockedSiteVerificationDecision(failureState, now());
+      const nextBlockedReason =
+        failureDecision.kind === "block" ? failureDecision.reason : blockedReason;
+
+      scheduleCooldownRerender(failureState, nextBlockedReason);
+      render(failureState, nextBlockedReason);
+    }
+  };
+
+  const scheduleCooldownRerender = (
+    currentState: ExtensionState,
+    reason: typeof blockedReason,
+  ): void => {
+    const delayMs = cooldownUntil - now().getTime();
+
+    if (delayMs <= 0) {
+      render(currentState, reason);
+      return;
+    }
+
+    scheduleTimeout(() => {
+      if (!isChecking && now().getTime() >= cooldownUntil) {
+        render(currentState, reason);
+      }
+    }, delayMs);
+  };
+
+  render(state, blockedReason);
+
+  if (options.autoVerify) {
+    await verifyAndMaybeRestore();
   }
 }
 

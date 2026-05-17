@@ -1,4 +1,5 @@
 import { createBlockPageViewModel, mountBlockPage } from "./view";
+import { createEmptyExtensionState } from "@/shared/state";
 import "./style.css";
 
 const root = document.querySelector("#app");
@@ -9,5 +10,8 @@ if (!(root instanceof HTMLDivElement)) {
 
 const originalDestination = new URL(window.location.href).searchParams.get("url");
 if (originalDestination !== null) {
-  mountBlockPage(root, createBlockPageViewModel(originalDestination));
+  mountBlockPage(
+    root,
+    createBlockPageViewModel(createEmptyExtensionState(), "setupRequired", originalDestination),
+  );
 }

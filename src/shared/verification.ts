@@ -54,13 +54,18 @@ export type VerifyDailySolveGateResponse = {
   usedCache: boolean;
 };
 
+export type BlockedSiteBlockReason =
+  | "setupRequired"
+  | "blockedByHardLock"
+  | "blockedByDailySolveGate";
+
 export type BlockedSiteVerificationDecision =
   | {
       kind: "allow";
     }
   | {
       kind: "block";
-      reason: "setupRequired" | "blockedByHardLock" | "blockedByDailySolveGate";
+      reason: BlockedSiteBlockReason;
     };
 
 export async function requestDailySolveGateVerification(): Promise<VerifyDailySolveGateResponse> {

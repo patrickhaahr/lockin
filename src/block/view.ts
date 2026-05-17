@@ -1,6 +1,22 @@
+import { getPopupStatusViewModel } from "@/popup/status";
+import type { ExtensionState } from "@/shared/types";
+import type { BlockedSiteBlockReason } from "@/shared/verification";
+
 type BlockPageViewModel = {
+  blockedReasonLabel: string;
   blockedHostname: string | null;
+  isCheckAgainDisabled: boolean;
+  isChecking: boolean;
+  lastAcceptedSolveValue: string | null;
+  nextRelevantLabel: string;
+  nextRelevantValue: string;
   originalDestination: string;
+  summary: string;
+  title: string;
+};
+
+type BlockPageActions = {
+  onCheckAgain?: () => void;
 };
 
 const BLOCK_PAGE_STYLES = `
@@ -71,6 +87,28 @@ h1 {
   margin-top: 16px;
 }
 
+.actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 24px;
+}
+
+.check-again-button {
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #5a7cff, #7f96ff);
+  color: #f4f7fb;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 11px 18px;
+}
+
+.check-again-button:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
 dt {
   color: #95a4d9;
   font-size: 0.78rem;
@@ -86,14 +124,35 @@ dd {
 }
 `;
 
-export function createBlockPageViewModel(originalDestination: string): BlockPageViewModel {
+export function createBlockPageViewModel(
+  state: ExtensionState,
+  blockedReason: BlockedSiteBlockReason,
+  originalDestination: string,
+  now: Date = new Date(),
+  isChecking = false,
+  isCheckAgainDisabled = isChecking,
+): BlockPageViewModel {
+  const popupStatus = getPopupStatusViewModel(state, now);
+
   return {
+    blockedReasonLabel: getBlockedReasonLabel(blockedReason, popupStatus.kind),
     blockedHostname: getOriginalHostname(originalDestination),
+    isCheckAgainDisabled,
+    isChecking,
+    lastAcceptedSolveValue: popupStatus.lastAcceptedSolveValue,
+    nextRelevantLabel: popupStatus.nextRelevantLabel,
+    nextRelevantValue: popupStatus.nextRelevantValue,
     originalDestination,
+    summary: popupStatus.summary,
+    title: popupStatus.title,
   };
 }
 
-export function mountBlockPage(target: ShadowRoot | HTMLElement, model: BlockPageViewModel): void {
+export function mountBlockPage(
+  target: ShadowRoot | HTMLElement,
+  model: BlockPageViewModel,
+  actions: BlockPageActions = {},
+): void {
   const documentRef = target.ownerDocument;
 
   if (documentRef === null) {
@@ -117,21 +176,50 @@ export function mountBlockPage(target: ShadowRoot | HTMLElement, model: BlockPag
   eyebrow.textContent = "Block Page";
 
   const title = documentRef.createElement("h1");
-  title.textContent = "Access to this Blocked Site is currently denied";
+  title.textContent = model.title;
 
   const bodyCopy = documentRef.createElement("p");
   bodyCopy.className = "body-copy";
-  bodyCopy.textContent =
-    "This tab stays blocked until LockIn determines that access is allowed again.";
+  bodyCopy.textContent = model.summary;
 
   const detailsList = documentRef.createElement("dl");
   detailsList.className = "details-list";
+
   detailsList.append(
+    createDetailsRow(documentRef, "Blocked because", model.blockedReasonLabel),
     createDetailsRow(documentRef, "Blocked hostname", model.blockedHostname ?? "Unavailable"),
     createDetailsRow(documentRef, "Original destination", model.originalDestination),
   );
 
-  panel.append(eyebrow, title, bodyCopy, detailsList);
+  if (model.lastAcceptedSolveValue !== null) {
+    detailsList.append(
+      createDetailsRow(documentRef, "Latest Accepted Solve", model.lastAcceptedSolveValue),
+    );
+  }
+
+  detailsList.append(
+    createDetailsRow(documentRef, model.nextRelevantLabel, model.nextRelevantValue),
+  );
+
+  const actionRow = documentRef.createElement("div");
+  actionRow.className = "actions";
+
+  if (model.isCheckAgainDisabled || actions.onCheckAgain !== undefined) {
+    const checkAgainButton = documentRef.createElement("button");
+    checkAgainButton.className = "check-again-button";
+    checkAgainButton.disabled = model.isCheckAgainDisabled;
+    checkAgainButton.textContent = model.isChecking ? "Checking..." : "Check again";
+
+    if (actions.onCheckAgain !== undefined) {
+      checkAgainButton.onclick = (): void => {
+        actions.onCheckAgain?.();
+      };
+    }
+
+    actionRow.append(checkAgainButton);
+  }
+
+  panel.append(eyebrow, title, bodyCopy, detailsList, actionRow);
   shell.append(panel);
   target.replaceChildren(shell);
 }
@@ -155,5 +243,33 @@ function getOriginalHostname(destination: string): string | null {
     return new URL(destination).hostname;
   } catch {
     return null;
+  }
+}
+
+function getBlockedReasonLabel(
+  blockedReason: BlockedSiteBlockReason,
+  popupStatusKind: ReturnType<typeof getPopupStatusViewModel>["kind"],
+): string {
+  if (popupStatusKind === "blockedByHardLock") {
+    return "Hard Lock Window";
+  }
+
+  if (popupStatusKind === "setupRequired") {
+    return "Setup required";
+  }
+
+  return getBlockedReasonFallbackLabel(blockedReason);
+}
+
+function getBlockedReasonFallbackLabel(blockedReason: BlockedSiteBlockReason): string {
+  switch (blockedReason) {
+    case "blockedByHardLock":
+      return "Hard Lock Window";
+
+    case "setupRequired":
+      return "Setup required";
+
+    default:
+      return "Daily Solve Gate";
   }
 }

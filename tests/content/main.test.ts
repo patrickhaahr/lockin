@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { replacePageWithBlockPage, resolveBlockedSiteLoadAction } from "../../src/content/main";
+import { MANUAL_VERIFICATION_DEBOUNCE_MS } from "../../src/shared/constants";
 import { createConfiguredState } from "../../src/shared/state";
+import type { VerifyDailySolveGateResponse } from "../../src/shared/verification";
 
 const ACTIVE_PROTECTED_SETTINGS = {
   trackedProfile: "lockin-user",
@@ -12,6 +14,16 @@ const ACTIVE_PROTECTED_SETTINGS = {
 
 function createConfiguredTestState() {
   return createConfiguredState(ACTIVE_PROTECTED_SETTINGS);
+}
+
+function createLocalDate(
+  year: number,
+  monthIndex: number,
+  day: number,
+  hours: number,
+  minutes: number,
+): Date {
+  return new Date(year, monthIndex, day, hours, minutes, 0, 0);
 }
 
 class FakeCssStyleSheet {
@@ -43,7 +55,9 @@ class FakeElement {
   public readonly attributes = new Map<string, string>();
   public children: FakeElement[] = [];
   public className = "";
+  public disabled = false;
   public id = "";
+  public onclick: (() => void) | null = null;
   public textContent = "";
   public shadowRoot: FakeShadowRoot | null = null;
 
@@ -73,6 +87,14 @@ class FakeElement {
     this.shadowRoot = shadowRoot;
     return shadowRoot;
   }
+
+  click(): void {
+    if (this.disabled) {
+      return;
+    }
+
+    this.onclick?.();
+  }
 }
 
 class FakeDocument {
@@ -87,6 +109,8 @@ class FakeDocument {
   }
 }
 
+type TestReplacePageWindow = Parameters<typeof replacePageWithBlockPage>[4];
+
 function useFakeDomGlobals(): () => void {
   const previousShadowRoot = globalThis.ShadowRoot;
   const previousCssStyleSheet = globalThis.CSSStyleSheet;
@@ -100,16 +124,37 @@ function useFakeDomGlobals(): () => void {
   };
 }
 
+function getRenderedCheckAgainButton(fakeDocument: FakeDocument): FakeElement | undefined {
+  return getRenderedPanel(fakeDocument)?.children[4]?.children[0];
+}
+
+function getRenderedPanel(fakeDocument: FakeDocument): FakeElement | undefined {
+  return fakeDocument.documentElement.children[1]?.children[0]?.shadowRoot?.children[0]
+    ?.children[0];
+}
+
+function createTestWindow(overrides: Partial<TestReplacePageWindow> = {}): TestReplacePageWindow {
+  return {
+    location: {
+      replace: vi.fn(),
+    },
+    stop(): void {},
+    ...overrides,
+  };
+}
+
 describe("content blocked-site enforcement", () => {
   it("blocks active blocked-root subdomains and preserves the original destination", () => {
     expect(
       resolveBlockedSiteLoadAction(
         createConfiguredTestState(),
         "https://mobile.twitter.com/home?ref=lockin#top",
+        createLocalDate(2026, 4, 16, 7, 30),
       ),
     ).toEqual({
       kind: "block",
       blockedRoot: "twitter.com",
+      blockedReason: "blockedByHardLock",
       originalDestination: "https://mobile.twitter.com/home?ref=lockin#top",
     });
   });
@@ -148,24 +193,41 @@ describe("content blocked-site enforcement", () => {
     ).toEqual({
       kind: "block",
       blockedRoot: "x.com",
+      blockedReason: "blockedByDailySolveGate",
       originalDestination: "https://x.com/home",
     });
   });
 
-  it("replaces the current document with a rendered block page", () => {
+  it("renders a reason-aware block page with the original destination and latest solve details", async () => {
     const restoreGlobals = useFakeDomGlobals();
     const fakeDocument = new FakeDocument();
     let stopCalls = 0;
+    const state = createConfiguredTestState();
+    state.verification = {
+      kind: "blockedByHardLock",
+      checkedAt: createLocalDate(2026, 4, 16, 7, 30).toISOString(),
+      lastAcceptedSolveAt: createLocalDate(2026, 4, 16, 0, 0).toISOString(),
+      allowCacheBrowserLocalDay: "2026-05-16",
+    };
 
     try {
-      replacePageWithBlockPage(
+      await replacePageWithBlockPage(
         "https://mobile.twitter.com/home?ref=lockin#top",
         "twitter.com",
+        "blockedByHardLock",
         fakeDocument as unknown as Document,
-        {
+        createTestWindow({
           stop(): void {
             stopCalls += 1;
           },
+        }),
+        {
+          now: () => createLocalDate(2026, 4, 16, 7, 30),
+          readState: async () => state,
+          requestVerification: async () => ({
+            usedCache: true,
+            verification: state.verification,
+          }),
         },
       );
     } finally {
@@ -183,16 +245,327 @@ describe("content blocked-site enforcement", () => {
     expect(host.getAttribute("aria-label")).toBe("LockIn blocked twitter.com");
     expect(host.shadowRoot?.children).toHaveLength(1);
 
-    const pageShell = host.shadowRoot?.children[0];
-    const panel = pageShell?.children[0];
+    const panel = getRenderedPanel(fakeDocument);
     const detailsList = panel?.children[3];
-    const blockedHostnameRow = detailsList?.children[0];
-    const originalDestinationRow = detailsList?.children[1];
+    const blockedBecauseRow = detailsList?.children[0];
+    const blockedHostnameRow = detailsList?.children[1];
+    const originalDestinationRow = detailsList?.children[2];
+    const latestSolveRow = detailsList?.children[3];
+    const nextUnlockRow = detailsList?.children[4];
+    const button = panel?.children[4]?.children[0];
 
-    expect(panel?.children[1]?.textContent).toBe("Access to this Blocked Site is currently denied");
+    expect(panel?.children[1]?.textContent).toBe("Blocked by Hard Lock");
+    expect(panel?.children[2]?.textContent).toContain("Hard Lock Window");
+    expect(blockedBecauseRow?.children[1]?.textContent).toBe("Hard Lock Window");
     expect(blockedHostnameRow?.children[1]?.textContent).toBe("mobile.twitter.com");
     expect(originalDestinationRow?.children[1]?.textContent).toBe(
       "https://mobile.twitter.com/home?ref=lockin#top",
     );
+    expect(latestSolveRow?.children[1]?.textContent).toBe("2026-05-16 00:00");
+    expect(nextUnlockRow?.children[1]?.textContent).toContain("09:00");
+    expect(button?.textContent).toBe("Check again");
+  });
+
+  it("verifies once on load and restores the original destination when access becomes allowed", async () => {
+    const restoreGlobals = useFakeDomGlobals();
+    const fakeDocument = new FakeDocument();
+    const blockedState = createConfiguredTestState();
+    blockedState.verification = {
+      kind: "blockedByDailySolveGate",
+      checkedAt: createLocalDate(2026, 4, 16, 10, 0).toISOString(),
+      lastAcceptedSolveAt: createLocalDate(2026, 4, 15, 21, 45).toISOString(),
+      allowCacheBrowserLocalDay: null,
+    };
+
+    const allowedState = createConfiguredTestState();
+    allowedState.verification = {
+      kind: "allowedToday",
+      checkedAt: createLocalDate(2026, 4, 16, 10, 1).toISOString(),
+      lastAcceptedSolveAt: createLocalDate(2026, 4, 16, 10, 0).toISOString(),
+      allowCacheBrowserLocalDay: "2026-05-16",
+    };
+
+    const requestVerification = vi.fn(async () => ({
+      usedCache: false,
+      verification: allowedState.verification,
+    }));
+    const locationReplace = vi.fn();
+    let readCount = 0;
+
+    try {
+      await replacePageWithBlockPage(
+        "https://x.com/home",
+        "x.com",
+        "blockedByDailySolveGate",
+        fakeDocument as unknown as Document,
+        createTestWindow({ location: { replace: locationReplace } }),
+        {
+          now: () => createLocalDate(2026, 4, 16, 10, 1),
+          readState: async () => {
+            readCount += 1;
+            return readCount >= 2 ? allowedState : blockedState;
+          },
+          requestVerification,
+        },
+      );
+    } finally {
+      restoreGlobals();
+    }
+
+    expect(requestVerification).toHaveBeenCalledTimes(1);
+    expect(locationReplace).toHaveBeenCalledWith("https://x.com/home");
+  });
+
+  it("disables Check again while a manual verification is in flight", async () => {
+    const restoreGlobals = useFakeDomGlobals();
+    const fakeDocument = new FakeDocument();
+    const state = createConfiguredTestState();
+    state.verification = {
+      kind: "blockedByDailySolveGate",
+      checkedAt: createLocalDate(2026, 4, 16, 10, 0).toISOString(),
+      lastAcceptedSolveAt: createLocalDate(2026, 4, 15, 21, 45).toISOString(),
+      allowCacheBrowserLocalDay: null,
+    };
+
+    let currentTimeMs = createLocalDate(2026, 4, 16, 10, 1).getTime();
+    const scheduledTimeout = createScheduledTimeoutRecorder();
+    let resolveVerificationRequest!: (value: VerifyDailySolveGateResponse) => void;
+    const requestVerification = vi
+      .fn<() => Promise<VerifyDailySolveGateResponse>>()
+      .mockResolvedValueOnce({
+        usedCache: false,
+        verification: state.verification,
+      })
+      .mockImplementationOnce(() => {
+        const deferred = createDeferredVerificationResponse();
+        resolveVerificationRequest = deferred.resolve;
+        return deferred.promise;
+      });
+
+    try {
+      await replacePageWithBlockPage(
+        "https://x.com/home",
+        "x.com",
+        "blockedByDailySolveGate",
+        fakeDocument as unknown as Document,
+        createTestWindow(),
+        {
+          now: () => new Date(currentTimeMs),
+          readState: async () => state,
+          requestVerification,
+          scheduleTimeout: scheduledTimeout.schedule,
+        },
+      );
+
+      currentTimeMs += MANUAL_VERIFICATION_DEBOUNCE_MS;
+      scheduledTimeout.runLatest();
+
+      const firstButton = getRenderedCheckAgainButton(fakeDocument);
+
+      firstButton?.click();
+
+      await Promise.resolve();
+
+      const checkingButton = getRenderedCheckAgainButton(fakeDocument);
+
+      expect(checkingButton?.disabled).toBe(true);
+      expect(checkingButton?.textContent).toBe("Checking...");
+      expect(requestVerification).toHaveBeenCalledTimes(2);
+
+      resolveVerificationRequest({
+        usedCache: false,
+        verification: state.verification,
+      });
+
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    } finally {
+      restoreGlobals();
+    }
+  });
+
+  it("keeps Check again disabled until the debounce window expires", async () => {
+    const restoreGlobals = useFakeDomGlobals();
+    const fakeDocument = new FakeDocument();
+    const state = createConfiguredTestState();
+    state.verification = {
+      kind: "blockedByDailySolveGate",
+      checkedAt: createLocalDate(2026, 4, 16, 10, 0).toISOString(),
+      lastAcceptedSolveAt: createLocalDate(2026, 4, 15, 21, 45).toISOString(),
+      allowCacheBrowserLocalDay: null,
+    };
+
+    let currentTimeMs = createLocalDate(2026, 4, 16, 10, 1).getTime();
+    const scheduledTimeout = createScheduledTimeoutRecorder();
+    const requestVerification = vi
+      .fn<() => Promise<VerifyDailySolveGateResponse>>()
+      .mockResolvedValue({
+        usedCache: false,
+        verification: state.verification,
+      });
+
+    try {
+      await replacePageWithBlockPage(
+        "https://x.com/home",
+        "x.com",
+        "blockedByDailySolveGate",
+        fakeDocument as unknown as Document,
+        createTestWindow(),
+        {
+          now: () => new Date(currentTimeMs),
+          readState: async () => state,
+          requestVerification,
+          scheduleTimeout: scheduledTimeout.schedule,
+        },
+      );
+
+      expect(requestVerification).toHaveBeenCalledTimes(1);
+
+      const cooldownButton = getRenderedCheckAgainButton(fakeDocument);
+
+      expect(cooldownButton?.disabled).toBe(true);
+      expect(cooldownButton?.textContent).toBe("Check again");
+
+      cooldownButton?.click();
+      expect(requestVerification).toHaveBeenCalledTimes(1);
+
+      currentTimeMs += MANUAL_VERIFICATION_DEBOUNCE_MS;
+      scheduledTimeout.runLatest();
+
+      const refreshedButton = getRenderedCheckAgainButton(fakeDocument);
+
+      expect(refreshedButton?.disabled).toBe(false);
+    } finally {
+      restoreGlobals();
+    }
+  });
+
+  it("keeps Verification failed visible after the debounce window until a real retry", async () => {
+    const restoreGlobals = useFakeDomGlobals();
+    const fakeDocument = new FakeDocument();
+    const state = createConfiguredTestState();
+    state.verification = {
+      kind: "blockedByDailySolveGate",
+      checkedAt: createLocalDate(2026, 4, 16, 10, 0).toISOString(),
+      lastAcceptedSolveAt: createLocalDate(2026, 4, 15, 21, 45).toISOString(),
+      allowCacheBrowserLocalDay: null,
+    };
+
+    let currentTimeMs = createLocalDate(2026, 4, 16, 10, 1).getTime();
+    const scheduledTimeout = createScheduledTimeoutRecorder();
+    const requestVerification = vi
+      .fn<() => Promise<VerifyDailySolveGateResponse>>()
+      .mockRejectedValue(new Error("network down"));
+
+    try {
+      await replacePageWithBlockPage(
+        "https://x.com/home",
+        "x.com",
+        "blockedByDailySolveGate",
+        fakeDocument as unknown as Document,
+        createTestWindow(),
+        {
+          now: () => new Date(currentTimeMs),
+          readState: async () => state,
+          requestVerification,
+          scheduleTimeout: scheduledTimeout.schedule,
+        },
+      );
+
+      const panelAfterFailure = getRenderedPanel(fakeDocument);
+
+      expect(panelAfterFailure?.children[1]?.textContent).toBe("Verification failed");
+
+      currentTimeMs += MANUAL_VERIFICATION_DEBOUNCE_MS;
+      scheduledTimeout.runLatest();
+
+      const panelAfterCooldown = getRenderedPanel(fakeDocument);
+
+      expect(panelAfterCooldown?.children[1]?.textContent).toBe("Verification failed");
+      expect(panelAfterCooldown?.children[2]?.textContent).toContain("failing closed");
+    } finally {
+      restoreGlobals();
+    }
+  });
+
+  it("updates the displayed blocked reason when a failed verification crosses out of Hard Lock", async () => {
+    const restoreGlobals = useFakeDomGlobals();
+    const fakeDocument = new FakeDocument();
+    const state = createConfiguredTestState();
+    state.verification = {
+      kind: "blockedByDailySolveGate",
+      checkedAt: createLocalDate(2026, 4, 15, 22, 50).toISOString(),
+      lastAcceptedSolveAt: createLocalDate(2026, 4, 15, 8, 30).toISOString(),
+      allowCacheBrowserLocalDay: null,
+    };
+
+    let currentTimeMs = createLocalDate(2026, 4, 16, 8, 59).getTime();
+    const requestVerification = vi
+      .fn<() => Promise<VerifyDailySolveGateResponse>>()
+      .mockImplementation(async () => {
+        currentTimeMs = createLocalDate(2026, 4, 16, 9, 1).getTime();
+        throw new Error("network down");
+      });
+
+    try {
+      await replacePageWithBlockPage(
+        "https://x.com/home",
+        "x.com",
+        "blockedByHardLock",
+        fakeDocument as unknown as Document,
+        createTestWindow(),
+        {
+          now: () => new Date(currentTimeMs),
+          readState: async () => state,
+          requestVerification,
+          scheduleTimeout: createScheduledTimeoutRecorder().schedule,
+        },
+      );
+
+      const panel = getRenderedPanel(fakeDocument);
+      const detailsList = panel?.children[3];
+      const blockedBecauseRow = detailsList?.children[0];
+
+      expect(panel?.children[1]?.textContent).toBe("Verification failed");
+      expect(blockedBecauseRow?.children[1]?.textContent).toBe("Daily Solve Gate");
+    } finally {
+      restoreGlobals();
+    }
   });
 });
+
+function createDeferredVerificationResponse(): {
+  promise: Promise<VerifyDailySolveGateResponse>;
+  resolve: (resolvedValue: VerifyDailySolveGateResponse) => void;
+} {
+  let resolvePromise!: (resolvedValue: VerifyDailySolveGateResponse) => void;
+
+  const promise = new Promise<VerifyDailySolveGateResponse>((resolve) => {
+    resolvePromise = resolve;
+  });
+
+  return {
+    promise,
+    resolve: resolvePromise,
+  };
+}
+
+function createScheduledTimeoutRecorder(): {
+  schedule: (handler: () => void, delayMs: number) => number;
+  runLatest: () => void;
+} {
+  let latestHandler: (() => void) | null = null;
+
+  return {
+    schedule: (handler: () => void, _delayMs: number): number => {
+      latestHandler = handler;
+      return 1;
+    },
+    runLatest: (): void => {
+      if (latestHandler !== null) {
+        latestHandler();
+      }
+    },
+  };
+}

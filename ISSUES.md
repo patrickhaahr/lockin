@@ -151,7 +151,7 @@ Enforcement note: Issue 7's original same-tab redirect approach is not implement
    - Issue 5
 
 8. **Title**: Build the Block Page with reason-aware copy and retry flow
-   **Status**: pending
+   **Status**: done
    **Type**: AFK
    **Blocked by**: 5, 7
    **User stories covered**: reason-specific block page, check-again flow, original destination visibility
@@ -161,10 +161,10 @@ Enforcement note: Issue 7's original same-tab redirect approach is not implement
    Create the `Block Page` content shown for denied blocked-site access inside the blocked tab. It should render different copy for `Blocked by Hard Lock` and `Blocked by Daily Solve Gate`, display the blocked hostname or URL, show the latest accepted solve timestamp when available, show the next relevant unlock time or condition, automatically verify once on load, and offer a debounced `Check again` action that uses the shared verification flow and restores the original page when access becomes allowed.
 
    ## Acceptance criteria
-   - [ ] The block page explains whether the denial came from the `Hard Lock Window` or the `Daily Solve Gate`.
-   - [ ] The original blocked destination is visible to the user.
-   - [ ] The block page verifies once on load and also supports a debounced `Check again` action.
-   - [ ] When access becomes allowed, retry restores the original destination in the current tab.
+   - [x] The block page explains whether the denial came from the `Hard Lock Window` or the `Daily Solve Gate`.
+   - [x] The original blocked destination is visible to the user.
+   - [x] The block page verifies once on load and also supports a debounced `Check again` action.
+   - [x] When access becomes allowed, retry restores the original destination in the current tab.
 
    ## Blocked by
    - Issue 5
