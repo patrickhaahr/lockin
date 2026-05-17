@@ -1,8 +1,8 @@
 import { escapeHtml } from "@/shared/html";
 import {
+  formatProtectedSettingsLockedMessage,
   formatHardLockWindow,
   getProtectedSettingsChangeAvailability,
-  PROTECTED_SETTINGS_LOCKED_MESSAGE_PREFIX,
 } from "@/shared/state";
 import type { ExtensionState, ProtectedSettings } from "@/shared/types";
 
@@ -14,22 +14,23 @@ export type ProtectedSettingsFormValues = {
 
 const PROTECTED_SETTINGS_FORM_DETAIL = "Changes apply next browser-local day.";
 
+type RenderProtectedSettingsFormOptions = {
+  values?: ProtectedSettingsFormValues | null;
+  now?: Date;
+};
+
 export function renderProtectedSettingsForm(
   state: ExtensionState,
-  valuesOrNow: ProtectedSettingsFormValues | Date | null = null,
-  now: Date = new Date(),
+  options: RenderProtectedSettingsFormOptions = {},
 ): string {
   if (state.currentConfig === null) {
     throw new Error("Protected settings form requires current configuration.");
   }
 
-  const renderedValues = valuesOrNow instanceof Date ? null : valuesOrNow;
-  const resolvedNow = valuesOrNow instanceof Date ? valuesOrNow : now;
-  const protectedSettingsChangeAvailability = getProtectedSettingsChangeAvailability(
-    state,
-    resolvedNow,
-  );
-  const values = renderedValues ?? {
+  const protectedSettingsValues = options.values ?? null;
+  const now = options.now ?? new Date();
+  const protectedSettingsChangeAvailability = getProtectedSettingsChangeAvailability(state, now);
+  const values = protectedSettingsValues ?? {
     trackedProfile: state.currentConfig.trackedProfile,
     hardLockStart: state.currentConfig.hardLockWindow.start,
     hardLockEnd: state.currentConfig.hardLockWindow.end,
@@ -38,7 +39,11 @@ export function renderProtectedSettingsForm(
     ? "disabled"
     : "";
   const protectedSettingsDetail = protectedSettingsChangeAvailability.isLocked
-    ? `${PROTECTED_SETTINGS_LOCKED_MESSAGE_PREFIX}${escapeHtml(protectedSettingsChangeAvailability.nextChangeAvailableOnBrowserLocalDay ?? "")}.`
+    ? escapeHtml(
+        formatProtectedSettingsLockedMessage(
+          protectedSettingsChangeAvailability.nextChangeAvailableOnBrowserLocalDay ?? "",
+        ),
+      )
     : PROTECTED_SETTINGS_FORM_DETAIL;
 
   return `

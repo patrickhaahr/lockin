@@ -24,9 +24,30 @@ function createLockedProtectedSettingsState() {
 }
 
 describe("protected settings form rendering", () => {
+  it("renders provided draft values instead of the saved protected settings", () => {
+    const state = createLockedProtectedSettingsState();
+    const renderedForm = renderProtectedSettingsForm(state, {
+      values: {
+        trackedProfile: "draft-user",
+        hardLockStart: "21:30",
+        hardLockEnd: "07:15",
+      },
+      now: new Date("2026-05-17T08:00:00"),
+    });
+
+    expect(renderedForm).toContain('value="draft-user"');
+    expect(renderedForm).toContain('value="21:30"');
+    expect(renderedForm).toContain('value="07:15"');
+    expect(renderedForm).not.toContain('value="lockin-user"');
+    expect(renderedForm).not.toContain('value="23:00"');
+    expect(renderedForm).not.toContain('value="09:00"');
+  });
+
   it("disables protected-settings inputs and submit button while the daily lock is active", () => {
     const state = createLockedProtectedSettingsState();
-    const renderedForm = renderProtectedSettingsForm(state, new Date("2026-05-16T18:00:00"));
+    const renderedForm = renderProtectedSettingsForm(state, {
+      now: new Date("2026-05-16T18:00:00"),
+    });
 
     expect(renderedForm).toContain('name="trackedProfile"');
     expect(renderedForm).toContain('name="hardLockStart"');
@@ -40,7 +61,9 @@ describe("protected settings form rendering", () => {
 
   it("re-enables the protected-settings form after the next browser-local day begins", () => {
     const state = createLockedProtectedSettingsState();
-    const renderedForm = renderProtectedSettingsForm(state, new Date("2026-05-17T08:00:00"));
+    const renderedForm = renderProtectedSettingsForm(state, {
+      now: new Date("2026-05-17T08:00:00"),
+    });
 
     expect(renderedForm).not.toContain('type="submit" disabled');
     expect(renderedForm).not.toMatch(/required\s+disabled/gu);

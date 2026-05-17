@@ -1,4 +1,5 @@
 import {
+  clockTimeToMinutes,
   getBrowserLocalDay,
   isFullDayHardLockWindow,
   isSetupRequired,
@@ -49,6 +50,9 @@ export function getPopupStatusViewModel(
   now: Date = new Date(),
 ): PopupStatusViewModel {
   const kind = getPopupTopLevelState(state, now);
+  const lastAcceptedSolveValue = formatAcceptedSolveTimestamp(
+    state.verification.lastAcceptedSolveAt,
+  );
 
   switch (kind) {
     case "setupRequired":
@@ -64,9 +68,7 @@ export function getPopupStatusViewModel(
           state.currentConfig === null
             ? "Save setup to start checking the Daily Solve Gate."
             : "Update the Tracked Profile in settings.",
-        lastAcceptedSolveValue: formatAcceptedSolveTimestamp(
-          state.verification.lastAcceptedSolveAt,
-        ),
+        lastAcceptedSolveValue,
       };
 
     case "blockedByHardLock":
@@ -77,9 +79,7 @@ export function getPopupStatusViewModel(
           "Blocked Sites stay blocked during the Hard Lock Window regardless of Daily Solve Gate status.",
         nextRelevantLabel: "Next unlock",
         nextRelevantValue: getHardLockUnlockMessage(state, now),
-        lastAcceptedSolveValue: formatAcceptedSolveTimestamp(
-          state.verification.lastAcceptedSolveAt,
-        ),
+        lastAcceptedSolveValue,
       };
 
     case "blockedByDailySolveGate":
@@ -91,9 +91,7 @@ export function getPopupStatusViewModel(
         nextRelevantLabel: "Next unlock",
         nextRelevantValue:
           "Complete an Accepted Solve for this Browser-Local Day, then check again.",
-        lastAcceptedSolveValue: formatAcceptedSolveTimestamp(
-          state.verification.lastAcceptedSolveAt,
-        ),
+        lastAcceptedSolveValue,
       };
 
     case "allowedToday":
@@ -103,9 +101,7 @@ export function getPopupStatusViewModel(
         summary: "The Daily Solve Gate is satisfied for the current Browser-Local Day.",
         nextRelevantLabel: "Next block",
         nextRelevantValue: getNextHardLockMessage(state, now),
-        lastAcceptedSolveValue: formatAcceptedSolveTimestamp(
-          state.verification.lastAcceptedSolveAt,
-        ),
+        lastAcceptedSolveValue,
       };
 
     case "verificationFailed":
@@ -116,9 +112,7 @@ export function getPopupStatusViewModel(
           "LockIn could not verify LeetCode and is failing closed outside the Hard Lock Window.",
         nextRelevantLabel: "Next step",
         nextRelevantValue: "Use Check now to retry LeetCode verification.",
-        lastAcceptedSolveValue: formatAcceptedSolveTimestamp(
-          state.verification.lastAcceptedSolveAt,
-        ),
+        lastAcceptedSolveValue,
       };
   }
 }
@@ -178,7 +172,7 @@ function getNextHardLockMessage(state: ExtensionState, now: Date): string {
 }
 
 function getNextHardLockBrowserLocalDay(hardLockStart: string, now: Date): string {
-  const startMinutes = parseClockTimeToMinutes(hardLockStart);
+  const startMinutes = clockTimeToMinutes(hardLockStart);
 
   if (startMinutes === null) {
     return getBrowserLocalDay(now);
@@ -191,28 +185,4 @@ function getNextHardLockBrowserLocalDay(hardLockStart: string, now: Date): strin
   }
 
   return getBrowserLocalDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
-}
-
-function parseClockTimeToMinutes(value: string): number | null {
-  const match = /^(\d{2}):(\d{2})$/u.exec(value);
-
-  if (match === null) {
-    return null;
-  }
-
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-
-  if (
-    !Number.isInteger(hours) ||
-    !Number.isInteger(minutes) ||
-    hours < 0 ||
-    hours > 23 ||
-    minutes < 0 ||
-    minutes > 59
-  ) {
-    return null;
-  }
-
-  return hours * 60 + minutes;
 }

@@ -4,9 +4,9 @@ import {
   cancelBlockedRootRemoval,
   createEmptyExtensionState,
   createConfiguredState,
+  formatProtectedSettingsLockedMessage,
   formatHardLockWindow,
   isSetupRequired,
-  PROTECTED_SETTINGS_LOCKED_MESSAGE_PREFIX,
   savePendingProtectedSettings,
   scheduleBlockedRootRemoval,
 } from "@/shared/state";
@@ -205,7 +205,9 @@ async function saveProtectedSettings(
   }
 
   if (saveResult.kind === "locked") {
-    errorMessage.textContent = `${PROTECTED_SETTINGS_LOCKED_MESSAGE_PREFIX}${saveResult.nextChangeAvailableOnBrowserLocalDay}.`;
+    errorMessage.textContent = formatProtectedSettingsLockedMessage(
+      saveResult.nextChangeAvailableOnBrowserLocalDay,
+    );
     return;
   }
 
@@ -425,7 +427,7 @@ function renderSettingsView(state: ExtensionState): string {
         ${renderProtectedSettingsSummary(state.currentConfig)}
         ${renderPendingProtectedSettings(state)}
         <div class="mt-24">
-          ${renderProtectedSettingsForm(state, draftProtectedSettings)}
+          ${renderProtectedSettingsForm(state, { values: draftProtectedSettings })}
         </div>
       </div>
     `

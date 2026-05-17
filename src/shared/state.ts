@@ -123,6 +123,16 @@ export function parseClockTime(value: string): { hours: number; minutes: number 
   };
 }
 
+export function clockTimeToMinutes(value: string): number | null {
+  const parsedClockTime = parseClockTime(value);
+
+  if (parsedClockTime === null) {
+    return null;
+  }
+
+  return parsedClockTime.hours * 60 + parsedClockTime.minutes;
+}
+
 export function normalizeExtensionState(value: unknown): ExtensionState {
   if (!isRecord(value)) {
     return createEmptyExtensionState();
@@ -176,6 +186,10 @@ export function getProtectedSettingsChangeAvailability(
   };
 }
 
+export function formatProtectedSettingsLockedMessage(nextBrowserLocalDay: string): string {
+  return `${PROTECTED_SETTINGS_LOCKED_MESSAGE_PREFIX}${nextBrowserLocalDay}.`;
+}
+
 export function isWithinHardLockWindow(
   hardLockWindow: HardLockWindow,
   now: Date = new Date(),
@@ -185,8 +199,8 @@ export function isWithinHardLockWindow(
   }
 
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
-  const startMinutes = parseClockTimeToMinutes(hardLockWindow.start);
-  const endMinutes = parseClockTimeToMinutes(hardLockWindow.end);
+  const startMinutes = clockTimeToMinutes(hardLockWindow.start);
+  const endMinutes = clockTimeToMinutes(hardLockWindow.end);
 
   if (startMinutes === null || endMinutes === null) {
     return false;
@@ -517,14 +531,4 @@ function readString(value: unknown, key: string): string {
   }
 
   return typeof value[key] === "string" ? value[key] : "";
-}
-
-function parseClockTimeToMinutes(value: string): number | null {
-  const parsedClockTime = parseClockTime(value);
-
-  if (parsedClockTime === null) {
-    return null;
-  }
-
-  return parsedClockTime.hours * 60 + parsedClockTime.minutes;
 }
