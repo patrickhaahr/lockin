@@ -1,17 +1,14 @@
+import { clockTimeToMinutes, getBrowserLocalDay, isFullDayHardLockWindow } from "./state";
 import {
-  clockTimeToMinutes,
-  getBrowserLocalDay,
-  isFullDayHardLockWindow,
-  isSetupRequired,
-  isWithinHardLockWindow,
-} from "@/shared/state";
-import { hasAllowCacheForBrowserLocalDay } from "@/shared/verification";
-import type { ExtensionState, VerificationStateKind } from "@/shared/types";
+  getBlockedSiteStatusKind,
+  hasAllowCacheForBrowserLocalDay,
+  type BlockedSiteBlockReason,
+  type BlockedSiteStatusKind,
+} from "./blocked-site-policy";
+import type { ExtensionState } from "./types";
 
-export type PopupTopLevelState = Exclude<VerificationStateKind, "idle">;
-
-export type PopupStatusViewModel = {
-  kind: PopupTopLevelState;
+export type BlockedSiteStatusViewModel = {
+  kind: BlockedSiteStatusKind;
   title: string;
   summary: string;
   nextRelevantLabel: string;
@@ -19,55 +16,28 @@ export type PopupStatusViewModel = {
   lastAcceptedSolveValue: string | null;
 };
 
-export function getPopupTopLevelState(
+export function getBlockedSiteStatusViewModel(
   state: ExtensionState,
   now: Date = new Date(),
-): PopupTopLevelState {
-  if (isSetupRequired(state) || state.verification.kind === "setupRequired") {
-    return "setupRequired";
-  }
-
-  if (
-    state.currentConfig !== null &&
-    isWithinHardLockWindow(state.currentConfig.hardLockWindow, now)
-  ) {
-    return "blockedByHardLock";
-  }
-
-  if (state.verification.kind === "verificationFailed") {
-    return "verificationFailed";
-  }
-
-  if (hasAllowCacheForBrowserLocalDay(state.verification, now)) {
-    return "allowedToday";
-  }
-
-  return "blockedByDailySolveGate";
-}
-
-export function getPopupStatusViewModel(
-  state: ExtensionState,
-  now: Date = new Date(),
-): PopupStatusViewModel {
-  const kind = getPopupTopLevelState(state, now);
+): BlockedSiteStatusViewModel {
+  const kind = getBlockedSiteStatusKind(state, now);
   const lastAcceptedSolveValue = formatAcceptedSolveTimestamp(
     state.verification.lastAcceptedSolveAt,
   );
+  const isConfigMissing = state.currentConfig === null;
 
   switch (kind) {
     case "setupRequired":
       return {
         kind,
         title: "Setup required",
-        summary:
-          state.currentConfig === null
-            ? "Save a Tracked Profile and Hard Lock Window to switch into the regular popup status view."
-            : "LockIn could not verify the saved Tracked Profile. Update settings, then check again.",
+        summary: isConfigMissing
+          ? "Save a Tracked Profile and Hard Lock Window to switch into the regular popup status view."
+          : "LockIn could not verify the saved Tracked Profile. Update settings, then check again.",
         nextRelevantLabel: "Next step",
-        nextRelevantValue:
-          state.currentConfig === null
-            ? "Save setup to start checking the Daily Solve Gate."
-            : "Update the Tracked Profile in settings.",
+        nextRelevantValue: isConfigMissing
+          ? "Save setup to start checking the Daily Solve Gate."
+          : "Update the Tracked Profile in settings.",
         lastAcceptedSolveValue,
       };
 
@@ -114,6 +84,19 @@ export function getPopupStatusViewModel(
         nextRelevantValue: "Use Check now to retry LeetCode verification.",
         lastAcceptedSolveValue,
       };
+  }
+}
+
+export function getBlockedReasonLabel(reason: BlockedSiteBlockReason): string {
+  switch (reason) {
+    case "blockedByHardLock":
+      return "Hard Lock Window";
+
+    case "setupRequired":
+      return "Setup required";
+
+    default:
+      return "Daily Solve Gate";
   }
 }
 

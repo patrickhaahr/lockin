@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { createConfiguredState, createEmptyExtensionState } from "../../src/shared/state";
+import { getBlockedSiteAccessDecision } from "../../src/shared/blocked-site-policy";
 import {
   type VerifyDailySolveGateResponse,
-  getBlockedSiteVerificationDecision,
   requestDailySolveGateVerification,
   runDailySolveGateVerification,
 } from "../../src/shared/verification";
@@ -58,25 +58,27 @@ function createJsonResponse(body: unknown): Response {
 describe("daily solve gate verification", () => {
   it("blocks blocked-site loads immediately when setup is still required", () => {
     expect(
-      getBlockedSiteVerificationDecision(
+      getBlockedSiteAccessDecision(
         createEmptyExtensionState(),
         createLocalDate(2026, 4, 15, 18, 0),
       ),
     ).toEqual({
       kind: "block",
       reason: "setupRequired",
+      status: "setupRequired",
     });
   });
 
   it("blocks blocked-site loads immediately during the hard lock window", () => {
     expect(
-      getBlockedSiteVerificationDecision(
+      getBlockedSiteAccessDecision(
         createConfiguredTestState(),
         createLocalDate(2026, 4, 16, 7, 30),
       ),
     ).toEqual({
       kind: "block",
       reason: "blockedByHardLock",
+      status: "blockedByHardLock",
     });
   });
 
@@ -89,20 +91,22 @@ describe("daily solve gate verification", () => {
       allowCacheBrowserLocalDay: "2026-05-15",
     };
 
-    expect(getBlockedSiteVerificationDecision(state, createLocalDate(2026, 4, 15, 18, 0))).toEqual({
+    expect(getBlockedSiteAccessDecision(state, createLocalDate(2026, 4, 15, 18, 0))).toEqual({
       kind: "allow",
+      status: "allowedToday",
     });
   });
 
   it("blocks blocked-site loads immediately without a current-day allow cache", () => {
     expect(
-      getBlockedSiteVerificationDecision(
+      getBlockedSiteAccessDecision(
         createConfiguredTestState(),
         createLocalDate(2026, 4, 15, 18, 0),
       ),
     ).toEqual({
       kind: "block",
       reason: "blockedByDailySolveGate",
+      status: "blockedByDailySolveGate",
     });
   });
 

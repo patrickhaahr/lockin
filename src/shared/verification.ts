@@ -1,6 +1,7 @@
-import { getBrowserLocalDay, isSetupRequired, isWithinHardLockWindow } from "./state";
+import { getBrowserLocalDay, isWithinHardLockWindow } from "./state";
 import { readExtensionState, writeVerificationStatus } from "./storage";
 import type { ExtensionState, VerificationStateKind, VerificationStatus } from "./types";
+import { getBlockedSiteAccessDecision } from "./blocked-site-policy";
 
 const LEETCODE_GRAPHQL_URL = "https://leetcode.com/graphql/";
 const ACCEPTED_SUBMISSIONS_LIMIT = 1;
@@ -61,19 +62,7 @@ export type DailySolveGateVerificationRequestOptions = DailySolveGateVerificatio
   writeVerification?: (verification: VerificationStatus) => Promise<void>;
 };
 
-export type BlockedSiteBlockReason =
-  | "setupRequired"
-  | "blockedByHardLock"
-  | "blockedByDailySolveGate";
-
-export type BlockedSiteVerificationDecision =
-  | {
-      kind: "allow";
-    }
-  | {
-      kind: "block";
-      reason: BlockedSiteBlockReason;
-    };
+export type { BlockedSiteBlockReason } from "./blocked-site-policy";
 
 export async function requestDailySolveGateVerification(
   options: DailySolveGateVerificationRequestOptions = {},
@@ -113,7 +102,7 @@ export async function runDailySolveGateVerification(
   options: DailySolveGateVerificationOptions = {},
 ): Promise<DailySolveGateVerificationResult> {
   const now = options.now ?? new Date();
-  const precheckedDecision = getBlockedSiteVerificationDecision(state, now);
+  const precheckedDecision = getBlockedSiteAccessDecision(state, now);
 
   if (precheckedDecision.kind === "block" && precheckedDecision.reason === "setupRequired") {
     return {
@@ -171,52 +160,6 @@ export async function runDailySolveGateVerification(
       usedCache: false,
     };
   }
-}
-
-export function getBlockedSiteVerificationDecision(
-  state: ExtensionState,
-  now: Date = new Date(),
-): BlockedSiteVerificationDecision {
-  if (isSetupRequired(state)) {
-    return {
-      kind: "block",
-      reason: "setupRequired",
-    };
-  }
-
-  if (
-    state.currentConfig !== null &&
-    isWithinHardLockWindow(state.currentConfig.hardLockWindow, now)
-  ) {
-    return {
-      kind: "block",
-      reason: "blockedByHardLock",
-    };
-  }
-
-  if (hasAllowCacheForBrowserLocalDay(state.verification, now)) {
-    return {
-      kind: "allow",
-    };
-  }
-
-  return {
-    kind: "block",
-    reason: "blockedByDailySolveGate",
-  };
-}
-
-export function hasAllowCacheForBrowserLocalDay(
-  verification: VerificationStatus,
-  now: Date = new Date(),
-): boolean {
-  const browserLocalDay = getBrowserLocalDay(now);
-
-  return (
-    (verification.kind === "allowedToday" || verification.kind === "blockedByHardLock") &&
-    verification.allowCacheBrowserLocalDay === browserLocalDay &&
-    verification.lastAcceptedSolveAt !== null
-  );
 }
 
 async function fetchAcceptedSolveResult(

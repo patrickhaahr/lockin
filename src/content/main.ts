@@ -7,9 +7,8 @@ import {
 import { readExtensionState } from "@/shared/storage";
 import { getActiveBlockedRootForHostname } from "@/shared/state";
 import type { ExtensionState } from "@/shared/types";
+import { getBlockedSiteAccessDecision } from "@/shared/blocked-site-policy";
 import {
-  type BlockedSiteBlockReason,
-  getBlockedSiteVerificationDecision,
   requestDailySolveGateVerification,
   type VerifyDailySolveGateResponse,
 } from "@/shared/verification";
@@ -21,7 +20,6 @@ export type BlockedSiteLoadAction =
   | {
       kind: "block";
       blockedRoot: string;
-      blockedReason: BlockedSiteBlockReason;
       originalDestination: string;
     };
 
@@ -77,7 +75,6 @@ export async function enforceBlockedSiteForCurrentLocation(
   await replacePageWithBlockPage(
     action.originalDestination,
     action.blockedRoot,
-    action.blockedReason,
     documentRef,
     windowRef,
     dependencies,
@@ -97,13 +94,12 @@ export function resolveBlockedSiteLoadAction(
     };
   }
 
-  const decision = getBlockedSiteVerificationDecision(state, now);
+  const decision = getBlockedSiteAccessDecision(state, now);
 
   if (decision.kind === "block") {
     return {
       kind: "block",
       blockedRoot,
-      blockedReason: decision.reason,
       originalDestination: locationHref,
     };
   }
@@ -116,7 +112,6 @@ export function resolveBlockedSiteLoadAction(
 export function replacePageWithBlockPage(
   originalDestination: string,
   blockedRoot: string,
-  blockedReason: BlockedSiteBlockReason,
   documentRef: Document = document,
   windowRef: ReplacePageWindow = window,
   dependencies: BlockPageDependencies = {},
@@ -143,7 +138,7 @@ export function replacePageWithBlockPage(
   htmlElement.replaceChildren(head, body);
 
   const shadowRoot = host.attachShadow({ mode: "open" });
-  return renderBlockPage(shadowRoot, originalDestination, blockedReason, {
+  return renderBlockPage(shadowRoot, originalDestination, {
     autoVerify: true,
     dependencies,
     windowRef: windowRef.location,
@@ -167,7 +162,6 @@ type BlockPageRenderOptions = {
 async function renderBlockPage(
   target: ShadowRoot,
   originalDestination: string,
-  blockedReason: BlockedSiteBlockReason,
   options: BlockPageRenderOptions,
 ): Promise<void> {
   const readState = options.dependencies.readState ?? readExtensionState;
@@ -179,7 +173,7 @@ async function renderBlockPage(
   let cooldownUntil = 0;
   let isChecking = false;
 
-  const render = (currentState: ExtensionState, reason: typeof blockedReason): void => {
+  const render = (currentState: ExtensionState): void => {
     const isCooldownActive = now().getTime() < cooldownUntil;
     const isCheckAgainDisabled = isChecking || isCooldownActive;
     const onCheckAgain = isCheckAgainDisabled
@@ -192,7 +186,6 @@ async function renderBlockPage(
       target,
       createBlockPageViewModel(
         currentState,
-        reason,
         originalDestination,
         now(),
         isChecking,
@@ -208,12 +201,16 @@ async function renderBlockPage(
     }
 
     isChecking = true;
-    render(await readState(), blockedReason);
+    render(await readState());
 
     try {
       const verificationResponse = await requestVerification();
       const latestState = await readState();
-      const decision = getBlockedSiteVerificationDecision(latestState, now());
+      const nextState: ExtensionState = {
+        ...latestState,
+        verification: verificationResponse.verification,
+      };
+      const decision = getBlockedSiteAccessDecision(nextState, now());
 
       if (decision.kind === "allow") {
         isChecking = false;
@@ -222,16 +219,11 @@ async function renderBlockPage(
         return;
       }
 
-      const nextBlockedReason =
-        verificationResponse.verification.kind === "setupRequired"
-          ? "setupRequired"
-          : decision.reason;
-
       isChecking = false;
       cooldownUntil = now().getTime() + MANUAL_VERIFICATION_DEBOUNCE_MS;
-      scheduleCooldownRerender(latestState, nextBlockedReason);
+      scheduleCooldownRerender(nextState);
 
-      render(latestState, nextBlockedReason);
+      render(nextState);
     } catch {
       isChecking = false;
       cooldownUntil = now().getTime() + MANUAL_VERIFICATION_DEBOUNCE_MS;
@@ -246,34 +238,33 @@ async function renderBlockPage(
           kind: "verificationFailed",
         },
       };
-      const failureDecision = getBlockedSiteVerificationDecision(failureState, now());
-      const nextBlockedReason =
-        failureDecision.kind === "block" ? failureDecision.reason : blockedReason;
+      const failureDecision = getBlockedSiteAccessDecision(failureState, now());
 
-      scheduleCooldownRerender(failureState, nextBlockedReason);
-      render(failureState, nextBlockedReason);
+      if (failureDecision.kind === "allow") {
+        throw new Error("Verification failure should not allow a blocked site.");
+      }
+
+      scheduleCooldownRerender(failureState);
+      render(failureState);
     }
   };
 
-  const scheduleCooldownRerender = (
-    currentState: ExtensionState,
-    reason: typeof blockedReason,
-  ): void => {
+  const scheduleCooldownRerender = (currentState: ExtensionState): void => {
     const delayMs = cooldownUntil - now().getTime();
 
     if (delayMs <= 0) {
-      render(currentState, reason);
+      render(currentState);
       return;
     }
 
     scheduleTimeout(() => {
       if (!isChecking && now().getTime() >= cooldownUntil) {
-        render(currentState, reason);
+        render(currentState);
       }
     }, delayMs);
   };
 
-  render(state, blockedReason);
+  render(state);
 
   if (options.autoVerify) {
     await verifyAndMaybeRestore();

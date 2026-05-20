@@ -4,7 +4,7 @@ import {
   type ReevaluateBlockedSiteRequest,
 } from "@/shared/runtime-messages";
 import type { ExtensionState } from "@/shared/types";
-import { getBlockedSiteVerificationDecision } from "@/shared/verification";
+import { getBlockedSiteAccessDecision } from "@/shared/blocked-site-policy";
 
 type TabsApi = Pick<typeof chrome.tabs, "query" | "reload" | "sendMessage">;
 type FallbackReloadMode = "allBlockedRoots" | "newlyBlockedRootsOnly";
@@ -67,7 +67,7 @@ function shouldReloadTabForReevaluation(
     return (
       currentBlockedRoot !== null &&
       previousBlockedRoot === null &&
-      getBlockedSiteVerificationDecision(state, now).kind === "block"
+      getBlockedSiteAccessDecision(state, now).kind === "block"
     );
   } catch {
     return false;

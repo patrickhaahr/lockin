@@ -120,7 +120,7 @@ class FakeDocument {
   }
 }
 
-type TestReplacePageWindow = Parameters<typeof replacePageWithBlockPage>[4];
+type TestReplacePageWindow = Parameters<typeof replacePageWithBlockPage>[3];
 
 function useFakeDomGlobals(): () => void {
   const previousHTMLElement = globalThis.HTMLElement;
@@ -168,7 +168,6 @@ describe("content blocked-site enforcement", () => {
     ).toEqual({
       kind: "block",
       blockedRoot: TEST_BLOCKED_ROOT,
-      blockedReason: "blockedByHardLock",
       originalDestination: "https://mobile.example.com/home?ref=lockin#top",
     });
   });
@@ -211,7 +210,6 @@ describe("content blocked-site enforcement", () => {
     ).toEqual({
       kind: "block",
       blockedRoot: TEST_BLOCKED_ROOT,
-      blockedReason: "blockedByDailySolveGate",
       originalDestination: "https://example.com/home",
     });
   });
@@ -365,7 +363,6 @@ describe("content blocked-site enforcement", () => {
       await replacePageWithBlockPage(
         "https://mobile.twitter.com/home?ref=lockin#top",
         "twitter.com",
-        "blockedByHardLock",
         fakeDocument as unknown as Document,
         createTestWindow({
           stop(): void {
@@ -453,7 +450,6 @@ describe("content blocked-site enforcement", () => {
       await replacePageWithBlockPage(
         "https://example.com/home",
         TEST_BLOCKED_ROOT,
-        "blockedByDailySolveGate",
         fakeDocument as unknown as Document,
         createTestWindow({ location: { replace: locationReplace } }),
         {
@@ -503,7 +499,6 @@ describe("content blocked-site enforcement", () => {
       await replacePageWithBlockPage(
         "https://example.com/home",
         TEST_BLOCKED_ROOT,
-        "blockedByDailySolveGate",
         fakeDocument as unknown as Document,
         createTestWindow(),
         {
@@ -566,7 +561,6 @@ describe("content blocked-site enforcement", () => {
       await replacePageWithBlockPage(
         "https://example.com/home",
         TEST_BLOCKED_ROOT,
-        "blockedByDailySolveGate",
         fakeDocument as unknown as Document,
         createTestWindow(),
         {
@@ -619,7 +613,6 @@ describe("content blocked-site enforcement", () => {
       await replacePageWithBlockPage(
         "https://example.com/home",
         TEST_BLOCKED_ROOT,
-        "blockedByDailySolveGate",
         fakeDocument as unknown as Document,
         createTestWindow(),
         {
@@ -669,7 +662,6 @@ describe("content blocked-site enforcement", () => {
       await replacePageWithBlockPage(
         "https://example.com/home",
         TEST_BLOCKED_ROOT,
-        "blockedByHardLock",
         fakeDocument as unknown as Document,
         createTestWindow(),
         {
@@ -691,6 +683,54 @@ describe("content blocked-site enforcement", () => {
     }
   });
 
+  it("updates the displayed blocked reason when a debounce rerender crosses into Hard Lock", async () => {
+    const restoreGlobals = useFakeDomGlobals();
+    const fakeDocument = new FakeDocument();
+    const state = createConfiguredTestState();
+    state.verification = {
+      kind: "blockedByDailySolveGate",
+      checkedAt: createLocalDate(2026, 4, 16, 8, 58).toISOString(),
+      lastAcceptedSolveAt: createLocalDate(2026, 4, 15, 21, 45).toISOString(),
+      allowCacheBrowserLocalDay: null,
+    };
+
+    let currentTimeMs = createLocalDate(2026, 4, 16, 8, 59).getTime();
+    const scheduledTimeout = createScheduledTimeoutRecorder();
+    const requestVerification = vi
+      .fn<() => Promise<VerifyDailySolveGateResponse>>()
+      .mockResolvedValue({
+        usedCache: false,
+        verification: state.verification,
+      });
+
+    try {
+      await replacePageWithBlockPage(
+        "https://example.com/home",
+        TEST_BLOCKED_ROOT,
+        fakeDocument as unknown as Document,
+        createTestWindow(),
+        {
+          now: () => new Date(currentTimeMs),
+          readState: async () => state,
+          requestVerification,
+          scheduleTimeout: scheduledTimeout.schedule,
+        },
+      );
+
+      currentTimeMs = createLocalDate(2026, 4, 16, 23, 1).getTime();
+      scheduledTimeout.runLatest();
+
+      const panel = getRenderedPanel(fakeDocument);
+      const detailsList = panel?.children[3];
+      const blockedBecauseRow = detailsList?.children[0];
+
+      expect(panel?.children[1]?.textContent).toBe("Blocked by Hard Lock");
+      expect(blockedBecauseRow?.children[1]?.textContent).toBe("Hard Lock Window");
+    } finally {
+      restoreGlobals();
+    }
+  });
+
   it("injects block page component styles when mounting into a normal element", () => {
     const restoreGlobals = useFakeDomGlobals();
     const fakeDocument = new FakeDocument();
@@ -699,11 +739,7 @@ describe("content blocked-site enforcement", () => {
     try {
       mountBlockPage(
         root as unknown as HTMLElement,
-        createBlockPageViewModel(
-          createConfiguredTestState(),
-          "setupRequired",
-          "https://example.com/home",
-        ),
+        createBlockPageViewModel(createConfiguredTestState(), "https://example.com/home"),
       );
     } finally {
       restoreGlobals();

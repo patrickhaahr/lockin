@@ -1,6 +1,9 @@
-import { getPopupStatusViewModel } from "@/popup/status";
 import type { ExtensionState } from "@/shared/types";
-import type { BlockedSiteBlockReason } from "@/shared/verification";
+import { getBlockedSiteBlockReasonForStatus } from "@/shared/blocked-site-policy";
+import {
+  getBlockedReasonLabel,
+  getBlockedSiteStatusViewModel,
+} from "@/shared/blocked-site-presentation";
 
 type BlockPageViewModel = {
   blockedReasonLabel: string;
@@ -322,26 +325,36 @@ ${rootSelector} {
 
 export function createBlockPageViewModel(
   state: ExtensionState,
-  blockedReason: BlockedSiteBlockReason,
   originalDestination: string,
   now: Date = new Date(),
   isChecking = false,
   isCheckAgainDisabled = isChecking,
 ): BlockPageViewModel {
-  const popupStatus = getPopupStatusViewModel(state, now);
+  const blockedSiteStatus = getBlockedSiteStatusViewModel(state, now);
+  const blockedReason = getBlockedReasonForStatus(blockedSiteStatus.kind);
 
   return {
-    blockedReasonLabel: getBlockedReasonLabel(blockedReason, popupStatus.kind),
+    blockedReasonLabel: getBlockedReasonLabel(blockedReason),
     blockedHostname: getOriginalHostname(originalDestination),
     isCheckAgainDisabled,
     isChecking,
-    lastAcceptedSolveValue: popupStatus.lastAcceptedSolveValue,
-    nextRelevantLabel: popupStatus.nextRelevantLabel,
-    nextRelevantValue: popupStatus.nextRelevantValue,
+    lastAcceptedSolveValue: blockedSiteStatus.lastAcceptedSolveValue,
+    nextRelevantLabel: blockedSiteStatus.nextRelevantLabel,
+    nextRelevantValue: blockedSiteStatus.nextRelevantValue,
     originalDestination,
-    summary: popupStatus.summary,
-    title: popupStatus.title,
+    summary: blockedSiteStatus.summary,
+    title: blockedSiteStatus.title,
   };
+}
+
+function getBlockedReasonForStatus(
+  status: ReturnType<typeof getBlockedSiteStatusViewModel>["kind"],
+): ReturnType<typeof getBlockedSiteBlockReasonForStatus> {
+  if (status === "allowedToday") {
+    return "blockedByDailySolveGate";
+  }
+
+  return getBlockedSiteBlockReasonForStatus(status);
 }
 
 export function mountBlockPage(
@@ -513,33 +526,5 @@ function getOriginalHostname(destination: string): string | null {
     return new URL(destination).hostname;
   } catch {
     return null;
-  }
-}
-
-function getBlockedReasonLabel(
-  blockedReason: BlockedSiteBlockReason,
-  popupStatusKind: ReturnType<typeof getPopupStatusViewModel>["kind"],
-): string {
-  if (popupStatusKind === "blockedByHardLock") {
-    return "Hard Lock Window";
-  }
-
-  if (popupStatusKind === "setupRequired") {
-    return "Setup required";
-  }
-
-  return getBlockedReasonFallbackLabel(blockedReason);
-}
-
-function getBlockedReasonFallbackLabel(blockedReason: BlockedSiteBlockReason): string {
-  switch (blockedReason) {
-    case "blockedByHardLock":
-      return "Hard Lock Window";
-
-    case "setupRequired":
-      return "Setup required";
-
-    default:
-      return "Daily Solve Gate";
   }
 }

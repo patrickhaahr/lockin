@@ -12,6 +12,7 @@ import {
 } from "@/shared/state";
 import { escapeHtml } from "@/shared/html";
 import { MANUAL_VERIFICATION_DEBOUNCE_MS } from "@/shared/constants";
+import { getBlockedSiteStatusViewModel } from "@/shared/blocked-site-presentation";
 import { requestDailySolveGateVerification } from "@/shared/verification";
 import {
   renderProtectedSettingsForm,
@@ -26,7 +27,6 @@ import {
   writeExtensionState,
 } from "@/shared/storage";
 import type { ExtensionState, PopupView, ProtectedSettings } from "@/shared/types";
-import { getPopupStatusViewModel } from "./status";
 import "./style.css";
 
 const root = document.querySelector("#app");
@@ -347,7 +347,7 @@ function renderMainView(state: ExtensionState): string {
     throw new Error("Regular popup view requires current configuration.");
   }
 
-  const popupStatus = getPopupStatusViewModel(state);
+  const popupStatus = getBlockedSiteStatusViewModel(state);
   const checkNowDisabled = isCheckNowDisabled();
   const regularViewError =
     regularViewErrorMessage === ""

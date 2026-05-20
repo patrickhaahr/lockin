@@ -1,3 +1,4 @@
+import { getBlockedSiteAccessDecision } from "@/shared/blocked-site-policy";
 import { createBlockPageViewModel, mountBlockPage } from "./view";
 import { createEmptyExtensionState } from "@/shared/state";
 import "./style.css";
@@ -10,8 +11,12 @@ if (!(root instanceof HTMLDivElement)) {
 
 const originalDestination = new URL(window.location.href).searchParams.get("url");
 if (originalDestination !== null) {
-  mountBlockPage(
-    root,
-    createBlockPageViewModel(createEmptyExtensionState(), "setupRequired", originalDestination),
-  );
+  const initialState = createEmptyExtensionState();
+  const blockedDecision = getBlockedSiteAccessDecision(initialState);
+
+  if (blockedDecision.kind !== "block") {
+    throw new Error("Standalone block page requires a blocked state.");
+  }
+
+  mountBlockPage(root, createBlockPageViewModel(initialState, originalDestination));
 }
